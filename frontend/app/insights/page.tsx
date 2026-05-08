@@ -17,7 +17,6 @@ export default function InsightsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ FETCH FROM YOUR API (FIXED)
   useEffect(() => {
     fetch("/api/transactions")
       .then((res) => res.json())
@@ -46,7 +45,7 @@ export default function InsightsPage() {
 
       <div className="flex">
 
-        <Sidebar active="insights" />
+        <Sidebar />
 
         <main className="flex-1 p-10 space-y-8">
 
@@ -79,10 +78,6 @@ export default function InsightsPage() {
     </div>
   );
 }
-
-/* ========================= */
-/* SMART AI LOGIC (UPGRADED) */
-/* ========================= */
 
 function generateInsights(
   income: Transaction[],
@@ -138,21 +133,18 @@ function generateInsights(
     );
   }
 
-  /* 3️⃣ Overspending Warning */
   if (totalExpense > totalIncome) {
     insights.push(
       "🚨 Your expenses exceed income. Immediate budgeting needed."
     );
   }
 
-  /* 4️⃣ No Income Case */
   if (totalIncome === 0) {
     insights.push(
       "💡 Add income sources to unlock meaningful insights."
     );
   }
 
-  /* 5️⃣ Smart Saving Suggestion */
   if (totalExpense > 0) {
     insights.push(
       `💰 You could save ₹${Math.round(
@@ -161,14 +153,12 @@ function generateInsights(
     );
   }
 
-  /* 6️⃣ Income Stability */
   if (income.length < 2 && totalIncome > 0) {
     insights.push(
       "⚡ Consider adding multiple income streams for stability."
     );
   }
 
-  /* 7️⃣ Frequent Small Expenses */
   if (expense.length > 5) {
     insights.push(
       "🧾 You have many small expenses. Track subscriptions and daily spending."
@@ -178,9 +168,6 @@ function generateInsights(
   return insights;
 }
 
-/* ========================= */
-/* COMPONENT */
-/* ========================= */
 
 function InsightCard({ text }: { text: string }) {
   return (
