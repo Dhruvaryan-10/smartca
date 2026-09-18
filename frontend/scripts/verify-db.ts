@@ -16,6 +16,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { eq, TransactionRollbackError } from "drizzle-orm";
 import * as schema from "../db/schema";
+import { pgErrorCode } from "../db/pg-errors";
 
 const {
   users,
@@ -32,22 +33,6 @@ const results: Result[] = [];
 function record(name: string, pass: boolean, detail: string) {
   results.push({ name, pass, detail });
   console.log(`${pass ? "PASS" : "FAIL"} — ${name}: ${detail}`);
-}
-
-function pgErrorCode(err: unknown): string | undefined {
-  // drizzle-orm wraps the real `pg` driver error (which carries the
-  // Postgres error `.code`, e.g. 23505/23503) inside DrizzleQueryError's
-  // `.cause`. Check both, since that wrapping isn't guaranteed forever.
-  if (typeof err === "object" && err !== null) {
-    const direct = (err as { code?: unknown }).code;
-    if (typeof direct === "string") return direct;
-    const cause = (err as { cause?: unknown }).cause;
-    if (typeof cause === "object" && cause !== null) {
-      const causeCode = (cause as { code?: unknown }).code;
-      if (typeof causeCode === "string") return causeCode;
-    }
-  }
-  return undefined;
 }
 
 function isPgError(err: unknown, code: string): boolean {
@@ -83,14 +68,24 @@ async function main() {
       // --- 1. A user can exist ---------------------------------------
       const [userA] = await tx
         .insert(users)
-        .values({ name: "Verify User A", phone: "+910000000001" })
+        .values({
+          name: "Verify User A",
+          email: "verify-db-a@test.smartca.invalid",
+          passwordHash: "not-a-real-hash",
+          phone: "+910000000001",
+        })
         .returning();
       record("1. A user can exist", !!userA?.id, `inserted users.id=${userA?.id}`);
 
       // --- 2. Two users can exist independently -----------------------
       const [userB] = await tx
         .insert(users)
-        .values({ name: "Verify User B", phone: "+910000000002" })
+        .values({
+          name: "Verify User B",
+          email: "verify-db-b@test.smartca.invalid",
+          passwordHash: "not-a-real-hash",
+          phone: "+910000000002",
+        })
         .returning();
       record(
         "2. Two users can exist independently",

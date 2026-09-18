@@ -31,14 +31,23 @@ import {
 // ---------------------------------------------------------------------
 // Users
 // ---------------------------------------------------------------------
-// Deliberately minimal in Phase 1A: just enough identity to own records.
-// Auth.js (Phase 1B) may add/require additional columns (email
-// verification, provider linkage, etc.) — not guessed at here.
+// Phase 1B: Auth.js uses email/password (Credentials provider) as the
+// sign-in method, so `email` is now the required identifier and
+// `passwordHash` holds a bcrypt hash — never a plaintext password, and
+// never anything else that looks like a password. `phone` is kept as an
+// optional legacy field (carried over from the v1 OTP flow); it is not
+// used for authentication in this phase.
+//
+// No Auth.js adapter tables (accounts/sessions/verification_tokens) are
+// needed: Credentials-based sign-in only supports JWT sessions, not
+// database sessions, so this table alone is sufficient as the identity
+// store — see frontend/auth.ts.
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name"),
-  email: text("email"),
+  email: text("email").notNull(),
+  passwordHash: text("password_hash").notNull(),
   phone: text("phone"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

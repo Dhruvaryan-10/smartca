@@ -5,12 +5,16 @@ import Sidebar from "../components/Sidebar";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+// Shape returned by GET /api/transactions (services/transactions.ts —
+// Postgres/Drizzle rows, not the old Mongo shape). Money is integer
+// paise on the wire, per the schema's money convention.
 type Transaction = {
-  _id: string;
+  id: string;
   type: "income" | "expense";
-  amount: number;
+  amountPaise: number;
   category: string;
-  date: string;
+  description: string | null;
+  occurredOn: string;
 };
 
 export default function TaxesPage() {
@@ -20,14 +24,17 @@ export default function TaxesPage() {
   useEffect(() => {
     fetch("/api/transactions")
       .then((res) => res.json())
-      .then((data) => setTransactions(data))
+      .then((data) => setTransactions(Array.isArray(data) ? data : []))
       .catch(console.error);
   }, []);
 
-  // 🔹 Total Income
-  const totalIncome = transactions
+  // 🔹 Total Income — sum in integer paise first, convert to rupees
+  // once, since calculateTax() below expects a rupee amount and is
+  // otherwise left exactly as it was (tax-engine work is a later phase).
+  const totalIncomePaise = transactions
     .filter((t) => t.type === "income")
-    .reduce((acc, t) => acc + t.amount, 0);
+    .reduce((acc, t) => acc + t.amountPaise, 0);
+  const totalIncome = totalIncomePaise / 100;
 
   // 🔹 Tax Calculation
   const calculateTax = (income: number) => {

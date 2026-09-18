@@ -5,8 +5,21 @@ import Link from "next/link";
 import Navbar from "../components/Navbar";
 import Sidebar from "../components/Sidebar";
 
+// Shape returned by GET /api/transactions (services/transactions.ts —
+// Postgres/Drizzle rows, not the old Mongo shape). Money is integer
+// paise on the wire, per the schema's money convention; convert to
+// rupees only for display, here at the UI boundary.
+type Transaction = {
+  id: string;
+  type: "income" | "expense";
+  amountPaise: number;
+  category: string;
+  description: string | null;
+  occurredOn: string;
+};
+
 export default function IncomePage() {
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   // FORM STATE
   const [title, setTitle] = useState("");
@@ -19,7 +32,9 @@ export default function IncomePage() {
     const res = await fetch("/api/transactions");
     const data = await res.json();
 
-    const incomeOnly = data.filter((t: any) => t.type === "income");
+    const incomeOnly = (Array.isArray(data) ? data : []).filter(
+      (t: Transaction) => t.type === "income"
+    );
     setTransactions(incomeOnly);
   };
 
@@ -31,6 +46,15 @@ export default function IncomePage() {
   const handleAddIncome = async () => {
     if (!amount) return alert("Enter amount");
 
+    // The form collects rupees (placeholder "₹5000"); the API/service
+    // contract is integer paise (₹1 = 100 paise) — convert here, at the
+    // UI boundary, per the schema's money convention.
+    const amountPaise = Math.round(Number(amount) * 100);
+    if (!Number.isInteger(amountPaise) || amountPaise <= 0) {
+      alert("Enter a valid amount");
+      return;
+    }
+
     const res = await fetch("/api/transactions", {
       method: "POST",
       headers: {
@@ -38,9 +62,10 @@ export default function IncomePage() {
       },
       body: JSON.stringify({
         type: "income",
-        amount: Number(amount),
+        amountPaise,
         category,
-        date: new Date(),
+        description: description || title || null,
+        occurredOn: new Date().toISOString().slice(0, 10),
       }),
     });
 
@@ -52,15 +77,14 @@ export default function IncomePage() {
 
       fetchIncome(); // refresh data
     } else {
-      alert("Failed to add income");
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Failed to add income");
     }
   };
 
   // CALCULATIONS
-  const totalIncome = transactions.reduce(
-    (sum, t) => sum + t.amount,
-    0
-  );
+  const totalIncome =
+    transactions.reduce((sum, t) => sum + t.amountPaise, 0) / 100;
 
   return (
     <div className="flex min-h-screen bg-[#020617] text-white">
@@ -162,12 +186,12 @@ export default function IncomePage() {
               ) : (
                 transactions.slice(0, 5).map((t) => (
                   <div
-                    key={t._id}
+                    key={t.id}
                     className="flex justify-between border-b border-white/10 py-2"
                   >
                     <span>{t.category}</span>
                     <span className="text-green-400">
-                      ₹{t.amount}
+                      ₹{t.amountPaise / 100}
                     </span>
                   </div>
                 ))

@@ -4,12 +4,16 @@ import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import Sidebar from "../components/Sidebar";
 
+// Shape returned by GET /api/transactions (services/transactions.ts —
+// Postgres/Drizzle rows, not the old Mongo shape). Money is integer
+// paise on the wire, per the schema's money convention.
 interface Transaction {
-  _id: string;
+  id: string;
   type: "income" | "expense";
-  amount: number;
+  amountPaise: number;
   category: string;
-  date: string;
+  description: string | null;
+  occurredOn: string;
 }
 
 export default function InsightsPage() {
@@ -20,7 +24,7 @@ export default function InsightsPage() {
   useEffect(() => {
     fetch("/api/transactions")
       .then((res) => res.json())
-      .then((data) => setTransactions(data))
+      .then((data) => setTransactions(Array.isArray(data) ? data : []))
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
@@ -86,8 +90,10 @@ function generateInsights(
 
   const insights: string[] = [];
 
-  const totalIncome = income.reduce((s, i) => s + i.amount, 0);
-  const totalExpense = expense.reduce((s, i) => s + i.amount, 0);
+  // Sum in integer paise first, convert to rupees once — every
+  // threshold/message below is unchanged, just fed correct amounts now.
+  const totalIncome = income.reduce((s, i) => s + i.amountPaise, 0) / 100;
+  const totalExpense = expense.reduce((s, i) => s + i.amountPaise, 0) / 100;
   const savings = totalIncome - totalExpense;
 
   /* 1️⃣ Savings Health */
@@ -110,19 +116,21 @@ function generateInsights(
   }
 
   /* 2️⃣ Top Expense Category */
-  const categoryMap: Record<string, number> = {};
+  // Summed in paise — never displayed as a value, only compared to find
+  // the max, so no rupee conversion is needed here.
+  const categoryMapPaise: Record<string, number> = {};
 
   expense.forEach((e) => {
-    categoryMap[e.category] =
-      (categoryMap[e.category] || 0) + e.amount;
+    categoryMapPaise[e.category] =
+      (categoryMapPaise[e.category] || 0) + e.amountPaise;
   });
 
   let maxCategory = "";
   let maxValue = 0;
 
-  for (const key in categoryMap) {
-    if (categoryMap[key] > maxValue) {
-      maxValue = categoryMap[key];
+  for (const key in categoryMapPaise) {
+    if (categoryMapPaise[key] > maxValue) {
+      maxValue = categoryMapPaise[key];
       maxCategory = key;
     }
   }

@@ -5,8 +5,21 @@ import Link from "next/link";
 import Navbar from "../components/Navbar";
 import Sidebar from "../components/Sidebar";
 
+// Shape returned by GET /api/transactions (services/transactions.ts —
+// Postgres/Drizzle rows, not the old Mongo shape). Money is integer
+// paise on the wire, per the schema's money convention; convert to
+// rupees only for display, here at the UI boundary.
+type Transaction = {
+  id: string;
+  type: "income" | "expense";
+  amountPaise: number;
+  category: string;
+  description: string | null;
+  occurredOn: string;
+};
+
 export default function ExpensesPage() {
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   // FORM STATE
   const [title, setTitle] = useState("");
@@ -19,7 +32,9 @@ export default function ExpensesPage() {
     const res = await fetch("/api/transactions");
     const data = await res.json();
 
-    const expenseOnly = data.filter((t: any) => t.type === "expense");
+    const expenseOnly = (Array.isArray(data) ? data : []).filter(
+      (t: Transaction) => t.type === "expense"
+    );
     setTransactions(expenseOnly);
   };
 
@@ -31,6 +46,15 @@ export default function ExpensesPage() {
   const handleAddExpense = async () => {
     if (!amount) return alert("Enter amount");
 
+    // The form collects rupees (placeholder "₹5000"); the API/service
+    // contract is integer paise (₹1 = 100 paise) — convert here, at the
+    // UI boundary, per the schema's money convention.
+    const amountPaise = Math.round(Number(amount) * 100);
+    if (!Number.isInteger(amountPaise) || amountPaise <= 0) {
+      alert("Enter a valid amount");
+      return;
+    }
+
     const res = await fetch("/api/transactions", {
       method: "POST",
       headers: {
@@ -38,9 +62,10 @@ export default function ExpensesPage() {
       },
       body: JSON.stringify({
         type: "expense",
-        amount: Number(amount),
+        amountPaise,
         category,
-        date: new Date(),
+        description: description || title || null,
+        occurredOn: new Date().toISOString().slice(0, 10),
       }),
     });
 
@@ -52,15 +77,14 @@ export default function ExpensesPage() {
 
       fetchExpenses(); // refresh
     } else {
-      alert("Failed to add expense");
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Failed to add expense");
     }
   };
 
-  // CALCULATIONS
-  const totalExpense = transactions.reduce(
-    (sum, t) => sum + t.amount,
-    0
-  );
+  // CALCULATIONS — sum in integer paise first, convert to rupees once.
+  const totalExpense =
+    transactions.reduce((sum, t) => sum + t.amountPaise, 0) / 100;
 
   return (
     <div className="flex min-h-screen bg-[#020617] text-white">
@@ -167,12 +191,12 @@ export default function ExpensesPage() {
               ) : (
                 transactions.slice(0, 5).map((t) => (
                   <div
-                    key={t._id}
+                    key={t.id}
                     className="flex justify-between border-b border-white/10 py-2"
                   >
                     <span>{t.category}</span>
                     <span className="text-rose-400">
-                      ₹{t.amount}
+                      ₹{t.amountPaise / 100}
                     </span>
                   </div>
                 ))

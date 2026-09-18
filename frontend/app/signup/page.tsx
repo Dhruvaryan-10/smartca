@@ -1,80 +1,58 @@
 "use client";
 
 import { useState } from "react";
+import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import FinanceAIModel from "../components/FinanceAIModel";
 
 export default function Signup() {
-
   const router = useRouter();
 
-  const [step, setStep] = useState<"signup" | "otp">("signup");
-  const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
-  const [otp, setOtp] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // SEND OTP
-  const sendOtp = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-    if (!phone || !name) return alert("Enter all fields");
-
-    try {
-
-      setLoading(true);
-
-      const res = await fetch("http://localhost:5000/send-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setStep("otp");
-      } else {
-        alert(data.error || "Failed to send OTP");
-      }
-
-    } catch {
-      alert("Server error");
-    } finally {
-      setLoading(false);
+    if (!name || !email || !password) {
+      setError("Enter your name, email, and password.");
+      return;
     }
-  };
 
-  // VERIFY OTP
-  const verifyOtp = async () => {
+    setError(null);
+    setLoading(true);
 
-    if (!otp) return alert("Enter OTP");
+    const res = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password }),
+    });
 
-    try {
-
-      setLoading(true);
-
-      const res = await fetch("http://localhost:5000/verify-signup-otp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, otp, name }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        localStorage.setItem("token", data.token);
-        router.push("/dashboard");
-      } else {
-        alert(data.error || "Invalid OTP");
-      }
-
-    } catch {
-      alert("Server error");
-    } finally {
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || "Signup failed. Please try again.");
       setLoading(false);
+      return;
     }
+
+    // Signed up — now sign in with the same credentials.
+    const result = await signIn("credentials", { email, password, redirect: false });
+
+    setLoading(false);
+
+    if (!result || result.error) {
+      // Account was created but sign-in somehow failed — send them to
+      // login rather than leaving them stuck on this form.
+      router.push("/login");
+      return;
+    }
+
+    router.push("/dashboard");
   };
 
   return (
@@ -126,88 +104,64 @@ export default function Signup() {
               SmartCA
             </h1>
 
-            {step === "signup" && (
-              <>
-                <h2 className="text-center text-3xl font-bold mb-8">
-                  Create Account
-                </h2>
+            <h2 className="text-center text-3xl font-bold mb-8">
+              Create Account
+            </h2>
 
-                <div className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
 
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Full Name"
-                    className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder-slate-400"
-                  />
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Full Name"
+                autoComplete="name"
+                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder-slate-400"
+              />
 
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="Phone Number"
-                    className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder-slate-400"
-                  />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email"
+                autoComplete="email"
+                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder-slate-400"
+              />
 
-                  <button
-                    onClick={sendOtp}
-                    disabled={loading}
-                    className="w-full py-3 rounded-xl bg-teal-400 text-black font-semibold hover:scale-[1.03] transition"
-                  >
-                    {loading ? "Sending..." : "Send OTP"}
-                  </button>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password (min. 8 characters)"
+                autoComplete="new-password"
+                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder-slate-400"
+              />
 
-                </div>
-
-                <p className="mt-6 text-center text-slate-400 text-sm">
-                  Already have an account?{" "}
-                  <Link
-                    href="/login"
-                    className="text-teal-300 hover:underline"
-                  >
-                    Login
-                  </Link>
+              {error && (
+                <p className="text-sm text-rose-400" role="alert">
+                  {error}
                 </p>
-              </>
-            )}
+              )}
 
-            {step === "otp" && (
-              <>
-                <h2 className="text-center text-3xl font-bold mb-8">
-                  Enter OTP
-                </h2>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 rounded-xl bg-teal-400 text-black font-semibold hover:scale-[1.03] transition"
+              >
+                {loading ? "Creating account..." : "Create Account"}
+              </button>
 
-                <div className="space-y-6">
+            </form>
 
-                  <input
-                    type="text"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value)}
-                    maxLength={6}
-                    placeholder="6 digit OTP"
-                    className="w-full px-4 py-3 text-center text-lg tracking-widest rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder-slate-400"
-                  />
-
-                  <button
-                    onClick={verifyOtp}
-                    disabled={loading}
-                    className="w-full py-3 rounded-xl bg-teal-400 text-black font-semibold hover:scale-[1.03] transition"
-                  >
-                    {loading ? "Verifying..." : "Verify & Signup"}
-                  </button>
-
-                </div>
-
-                <button
-                  onClick={() => setStep("signup")}
-                  className="mt-4 text-sm text-slate-400 hover:text-teal-300 transition"
-                >
-                  ← Change Details
-                </button>
-              </>
-            )}
-
+            <p className="mt-6 text-center text-slate-400 text-sm">
+              Already have an account?{" "}
+              <Link
+                href="/login"
+                className="text-teal-300 hover:underline"
+              >
+                Login
+              </Link>
+            </p>
           </div>
 
         </motion.div>

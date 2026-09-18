@@ -1,86 +1,48 @@
 "use client";
 
 import { useState } from "react";
+import { signIn } from "next-auth/react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import FinanceAIModel from "../components/FinanceAIModel";
 
 export default function Login() {
-
   const router = useRouter();
 
-  const [step, setStep] = useState<"phone" | "otp">("phone");
-  const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // SEND OTP
-  const sendOtp = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-    if (!phone) return alert("Enter phone number");
-
-    try {
-
-      setLoading(true);
-
-      const res = await fetch("http://localhost:5000/send-otp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ phone }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        setStep("otp");
-      } else {
-        alert(data.error || "Failed to send OTP");
-      }
-
-    } catch {
-      alert("Server error");
-    } finally {
-      setLoading(false);
+    if (!email || !password) {
+      setError("Enter your email and password.");
+      return;
     }
-  };
 
-  // VERIFY LOGIN OTP
-  const verifyOtp = async () => {
+    setError(null);
+    setLoading(true);
 
-    if (!otp) return alert("Enter OTP");
+    // redirect: false — we handle the redirect ourselves so we can show
+    // a real error message instead of a lossy query-string redirect.
+    const result = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
 
-    try {
+    setLoading(false);
 
-      setLoading(true);
-
-      const res = await fetch("http://localhost:5000/verify-login-otp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ phone, otp }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-
-        localStorage.setItem("token", data.token);
-
-        router.push("/dashboard");
-
-      } else {
-        alert(data.error || "Invalid OTP");
-      }
-
-    } catch {
-      alert("Server error");
-    } finally {
-      setLoading(false);
+    if (!result || result.error) {
+      // Deliberately generic: never reveal whether the email exists.
+      setError("Invalid email or password.");
+      return;
     }
+
+    router.push("/dashboard");
   };
 
   return (
@@ -122,73 +84,52 @@ export default function Login() {
               SmartCA
             </h1>
 
-            {step === "phone" && (
-              <>
-                <h2 className="text-center text-3xl font-bold mb-8">
-                  Login
-                </h2>
+            <h2 className="text-center text-3xl font-bold mb-8">
+              Login
+            </h2>
 
-                <div className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6">
 
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="Enter phone number"
-                    className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                  />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Email"
+                autoComplete="email"
+                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400"
+              />
 
-                  <button
-                    onClick={sendOtp}
-                    disabled={loading}
-                    className="w-full py-3 rounded-xl bg-teal-400 text-black font-semibold"
-                  >
-                    {loading ? "Sending..." : "Send OTP"}
-                  </button>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                autoComplete="current-password"
+                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400"
+              />
 
-                </div>
-
-                <p className="mt-6 text-center text-slate-400 text-sm">
-                  Don’t have an account?{" "}
-                  <Link href="/signup" className="text-teal-300 hover:underline">
-                    Sign up
-                  </Link>
+              {error && (
+                <p className="text-sm text-rose-400" role="alert">
+                  {error}
                 </p>
-              </>
-            )}
+              )}
 
-            {step === "otp" && (
-              <>
-                <h2 className="text-center text-3xl font-bold mb-8">
-                  Enter OTP
-                </h2>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 rounded-xl bg-teal-400 text-black font-semibold"
+              >
+                {loading ? "Logging in..." : "Login"}
+              </button>
 
-                <input
-                  type="text"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value)}
-                  maxLength={6}
-                  placeholder="6 digit OTP"
-                  className="w-full px-4 py-3 text-center text-lg rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400"
-                />
+            </form>
 
-                <button
-                  onClick={verifyOtp}
-                  disabled={loading}
-                  className="mt-6 w-full py-3 rounded-xl bg-teal-400 text-black font-semibold"
-                >
-                  {loading ? "Verifying..." : "Verify OTP"}
-                </button>
-
-                <button
-                  onClick={() => setStep("phone")}
-                  className="mt-4 text-sm text-slate-400"
-                >
-                  ← Change Number
-                </button>
-              </>
-            )}
-
+            <p className="mt-6 text-center text-slate-400 text-sm">
+              Don&rsquo;t have an account?{" "}
+              <Link href="/signup" className="text-teal-300 hover:underline">
+                Sign up
+              </Link>
+            </p>
           </div>
 
         </motion.div>

@@ -1,14 +1,11 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 
 export default function Navbar() {
 
-  const router = useRouter();
-
   const logout = () => {
-    localStorage.removeItem("token");
-    router.push("/login");
+    signOut({ callbackUrl: "/login" });
   };
 
   return (

@@ -18,13 +18,20 @@ import {
 
 const COLORS = ["#14b8a6", "#6366f1", "#ec4899", "#f59e0b", "#ef4444"];
 
+// Shape returned by GET /api/transactions (services/transactions.ts —
+// Postgres/Drizzle rows, not the old Mongo shape). Money is integer
+// paise on the wire, per the schema's money convention; convert to
+// rupees only for display/calculation, here at the UI boundary.
 type Transaction = {
-  _id: string;
+  id: string;
   type: "income" | "expense";
-  amount: number;
+  amountPaise: number;
   category: string;
-  date: string;
+  description: string | null;
+  occurredOn: string;
 };
+
+const paiseToRupees = (paise: number) => paise / 100;
 
 export default function Dashboard() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -32,36 +39,41 @@ export default function Dashboard() {
   useEffect(() => {
     fetch("/api/transactions")
       .then((res) => res.json())
-      .then((data) => setTransactions(data))
+      .then((data) => setTransactions(Array.isArray(data) ? data : []))
       .catch((err) => console.error(err));
   }, []);
 
-  // 🔹 Calculations
-  const totalIncome = transactions
+  // 🔹 Calculations — sum in integer paise first (never accumulate
+  // rounding error across many rupee-converted additions), convert to
+  // rupees once at the end for display. reduce() over an empty array
+  // returns 0, not NaN, once amountPaise is a real number on every row.
+  const totalIncomePaise = transactions
     .filter((t) => t.type === "income")
-    .reduce((acc, t) => acc + t.amount, 0);
+    .reduce((acc, t) => acc + t.amountPaise, 0);
 
-  const totalExpenses = transactions
+  const totalExpensesPaise = transactions
     .filter((t) => t.type === "expense")
-    .reduce((acc, t) => acc + t.amount, 0);
+    .reduce((acc, t) => acc + t.amountPaise, 0);
 
+  const totalIncome = paiseToRupees(totalIncomePaise);
+  const totalExpenses = paiseToRupees(totalExpensesPaise);
   const savings = totalIncome - totalExpenses;
 
   // 🔹 Monthly Data
   const monthlyData = generateMonthlyData(transactions);
 
   // 🔹 Pie Data
-  const categoryMap: Record<string, number> = {};
+  const categoryMapPaise: Record<string, number> = {};
   transactions
     .filter((t) => t.type === "expense")
     .forEach((t) => {
-      categoryMap[t.category] =
-        (categoryMap[t.category] || 0) + t.amount;
+      categoryMapPaise[t.category] =
+        (categoryMapPaise[t.category] || 0) + t.amountPaise;
     });
 
-  const categoryData = Object.keys(categoryMap).map((key) => ({
+  const categoryData = Object.keys(categoryMapPaise).map((key) => ({
     name: key,
-    value: categoryMap[key],
+    value: paiseToRupees(categoryMapPaise[key]),
   }));
 
   const recentExpenses = transactions
@@ -142,12 +154,12 @@ export default function Dashboard() {
             ) : (
               recentExpenses.map((item) => (
                 <div
-                  key={item._id}
+                  key={item.id}
                   className="flex justify-between border-b border-white/10 py-2"
                 >
                   <span>{item.category}</span>
                   <span className="text-rose-400">
-                    ₹{item.amount}
+                    ₹{paiseToRupees(item.amountPaise)}
                   </span>
                 </div>
               ))
@@ -182,23 +194,33 @@ function StatCard({
 }
 
 function generateMonthlyData(transactions: Transaction[]) {
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-  const map: any = {};
+  // All 12 months, not just Jan-Jun — the old 6-month list silently
+  // dropped any transaction dated July-December regardless of amount.
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+  // Bucket by numeric month index (0-11), not by a locale-formatted
+  // name string — toLocaleString("default",{month:"short"}) renders
+  // September as "Sept" (4 letters) in some ICU/locale data, which
+  // would never match a hardcoded "Sep" key and silently drop that
+  // month's totals. Indexing sidesteps that entirely (same fix as
+  // reports/page.tsx).
+  const paiseByMonthIndex: { income: number; expense: number }[] = months.map(
+    () => ({ income: 0, expense: 0 })
+  );
 
   transactions.forEach((t) => {
-    const month = new Date(t.date).toLocaleString("default", {
-      month: "short",
-    });
+    const monthIndex = new Date(t.occurredOn).getMonth();
+    if (monthIndex < 0 || monthIndex > 11) return;
 
-    if (!map[month]) {
-      map[month] = { name: month, income: 0, expense: 0 };
-    }
-
-    if (t.type === "income") map[month].income += t.amount;
-    else map[month].expense += t.amount;
+    if (t.type === "income") paiseByMonthIndex[monthIndex].income += t.amountPaise;
+    else paiseByMonthIndex[monthIndex].expense += t.amountPaise;
   });
 
-  return months.map(
-    (m) => map[m] || { name: m, income: 0, expense: 0 }
-  );
+  return months.map((name, i) => ({
+    name,
+    income: paiseToRupees(paiseByMonthIndex[i].income),
+    expense: paiseToRupees(paiseByMonthIndex[i].expense),
+  }));
 }
