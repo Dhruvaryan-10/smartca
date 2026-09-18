@@ -1,3 +1,23 @@
+# ==============================================================
+# LEGACY BACKEND — PHASE 0 STATUS
+# ==============================================================
+# This Flask/PyMongo service is LEGACY. The MongoDB Atlas cluster
+# it depended on has been permanently deleted and is not being
+# migrated or recovered. This file is retained only so its
+# authentication pattern (JWT issuance + phone-scoped authorization
+# in get_current_user()) can be referenced when the replacement
+# auth system is built on Postgres/Drizzle + Auth.js in Phase 1.
+#
+# Every route below still queries MongoDB collections that no
+# longer exist. Do not deploy or rely on this service. It is
+# expected to fail at startup (see the fail-fast checks below) or
+# at request time once MONGO_URI/SECRET_KEY are unset, rather than
+# silently connecting to nothing.
+#
+# See docs/SMARTCA-REPOSITORY-AUDIT.md and MIGRATION-CHECKPOINT.md
+# for the full assessment and Phase 1 replacement plan.
+# ==============================================================
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -16,16 +36,29 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-SECRET_KEY = os.getenv("SECRET_KEY", "supersecret")
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError(
+        "SECRET_KEY is not set. The insecure hardcoded fallback has been "
+        "removed (see docs/SMARTCA-REPOSITORY-AUDIT.md, finding #3). "
+        "Set SECRET_KEY in backend/.env before running this legacy service."
+    )
 
 # ==============================
-# MongoDB Connection
+# MongoDB Connection (LEGACY — cluster deleted, Phase 1 replaces this
+# entirely with PostgreSQL/Drizzle; no fallback credential is provided)
 # ==============================
 
-MONGO_URI = os.getenv(
-    "MONGO_URI",
-    "mongodb+srv://smartca:Smartca123@cluster0.ecup91v.mongodb.net/smartca?retryWrites=true&w=majority"
-)
+MONGO_URI = os.getenv("MONGO_URI")
+if not MONGO_URI:
+    raise RuntimeError(
+        "MONGO_URI is not set, and no fallback is provided on purpose: "
+        "the previously hardcoded MongoDB Atlas credential has been removed "
+        "(see docs/SMARTCA-REPOSITORY-AUDIT.md, finding #1) and that cluster "
+        "has since been permanently deleted. This legacy Flask/PyMongo "
+        "backend cannot run until it is replaced by the Postgres/Drizzle "
+        "service layer planned for Phase 1."
+    )
 
 client = MongoClient(
     MONGO_URI,
