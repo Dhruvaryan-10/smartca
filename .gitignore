@@ -1,3 +1,43 @@
-node_modules
-.next
+# ===========================================================================
+# SmartCA .gitignore (repository-wide)
+# ===========================================================================
+# frontend/.gitignore additionally covers frontend-specific build output.
+# This file covers repo-wide concerns: secrets/env files, Node/Python
+# generated artifacts, and local development / AI agent tooling that must
+# stay on disk for local use but must never be committed to GitHub.
+
+# --- Environment files / secrets -------------------------------------------
+# Never commit real environment files, anywhere in the repo. Example files
+# (meant to be committed as templates) are explicitly un-ignored below.
 .env
+.env.*
+!**/.env.example
+
+# --- Node ------------------------------------------------------------------
+node_modules/
+.next/
+
+# --- Python (backend/) -------------------------------------------------------
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# --- Local development / AI agent tooling -----------------------------------
+# These must remain available on disk for local development but are never
+# pushed to GitHub. Do not delete the directories themselves — only keep
+# them out of git.
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# Serena
+.serena/
+serena/
+
+# Graphify
+graphify-out/
+graphify/
+.graphify/

@@ -69,3 +69,13 @@ Nothing about this checkpoint rewrites or deletes git history — `main`'s exist
 ## What Phase 1 will build
 
 Per the audit's proposed sequence: PostgreSQL + Drizzle schema, Auth.js/session authentication (replacing the Flask OTP flow), a user-scoped service layer, the deterministic tax engine, and only after those — documents, RAG, and the AI assistant. See `docs/SMARTCA-REPOSITORY-AUDIT.md` §15–18 for the full sequence and phase scope.
+
+## Phase 1A status: PostgreSQL + Drizzle foundation — complete
+
+The relational data foundation now exists and has been verified against a real local PostgreSQL database (not just TypeScript types). See `docs/decisions/0001-postgres-over-mongodb.md` for the rationale.
+
+- Schema (`frontend/db/schema.ts`): `users`, `assessment_years`, `transactions`, `deductions`, `tax_computations`, `documents` — all user-owned tables have a `NOT NULL` foreign key to `users.id` (`ON DELETE CASCADE`), money is stored as integer paise (`bigint`), and AY 2026-27 is seeded as a row in `assessment_years` rather than hardcoded into any enum.
+- Migration generated via `drizzle-kit generate` (`frontend/drizzle/0000_special_jane_foster.sql`) and applied to the local `smartca` database via `frontend/db/migrate.ts`.
+- Verified live against the database via `frontend/scripts/verify-db.ts` (11/11 checks passed, transactional rollback leaves no test data behind).
+- **The frontend is deliberately NOT reconnected to PostgreSQL yet.** No page under `frontend/app/*` imports anything from `frontend/db/`. The legacy Flask backend (`backend/app.py`) is unchanged and still MongoDB-shaped/non-functional, exactly as left in Phase 0.
+- Next: Auth.js/session authentication and the user-scoped service layer (Phase 1B+), per the sequence above.
