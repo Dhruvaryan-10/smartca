@@ -41,3 +41,9 @@ serena/
 graphify-out/
 graphify/
 .graphify/
+
+# --- Local Obsidian vault ----------------------------------------------------
+# Project-management/documentation workspace, local only — never committed or
+# pushed. Root-anchored so it matches only the vault at the repo root, not any
+# unrelated "SmartCA" path elsewhere in the tree.
+/SmartCA/
