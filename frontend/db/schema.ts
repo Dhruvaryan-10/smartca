@@ -17,8 +17,10 @@
 
 import {
   bigint,
+  customType,
   date,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -96,12 +98,38 @@ export const transactions = pgTable("transactions", {
   // free text on purpose — the set of sources will grow before it stabilizes.
   source: text("source"),
   occurredOn: date("occurred_on").notNull(),
+  // Set only on rows created by a CSV import. The fingerprint is a
+  // deterministic hash of the row's values plus its occurrence index within
+  // the file (see lib/csv-import.ts), unique per user, so re-importing the
+  // same file cannot create the same row twice. Manual rows leave both null.
+  importFingerprint: text("import_fingerprint"),
+  importBatchId: uuid("import_batch_id").references(() => importBatches.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("transactions_user_id_idx").on(table.userId),
   index("transactions_user_id_occurred_on_idx").on(table.userId, table.occurredOn),
   index("transactions_user_id_type_idx").on(table.userId, table.type),
+  // Null fingerprints (manual rows) never collide: Postgres treats NULLs as distinct.
+  uniqueIndex("transactions_user_id_import_fingerprint_unique").on(table.userId, table.importFingerprint),
+  index("transactions_import_batch_id_idx").on(table.importBatchId),
+]);
+
+// ---------------------------------------------------------------------
+// Import batches (CSV import metadata; the CSV file itself is never kept)
+// ---------------------------------------------------------------------
+
+export const importBatches = pgTable("import_batches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // sanitized display name only — never used as a path
+  filename: text("filename").notNull(),
+  rowCount: integer("row_count").notNull(),
+  insertedCount: integer("inserted_count").notNull(),
+  skippedDuplicateCount: integer("skipped_duplicate_count").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("import_batches_user_id_idx").on(table.userId),
 ]);
 
 // ---------------------------------------------------------------------
@@ -189,10 +217,56 @@ export const documents = pgTable("documents", {
   // storage key, path, etc.) — storage backend is not decided in this
   // phase, so this is intentionally just a string.
   storageRef: text("storage_ref").notNull(),
+  // Set by the server from the file's real bytes, never from what the browser claimed.
+  contentType: text("content_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  // hex SHA-256 of the file bytes; with user_id it stops the same file being stored twice
+  sha256: text("sha256").notNull(),
   processingStatus: documentProcessingStatus("processing_status").notNull().default("uploaded"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("documents_user_id_idx").on(table.userId),
   index("documents_user_id_assessment_year_id_idx").on(table.userId, table.assessmentYearId),
+  uniqueIndex("documents_user_id_sha256_unique").on(table.userId, table.sha256),
+]);
+
+// Postgres bytea <-> Node Buffer.
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
+// File bytes live here and ONLY here, never on `documents`, so listing
+// documents can never drag file content along. Deleting the document
+// cascades to this row: no orphaned bytes.
+export const documentFiles = pgTable("document_files", {
+  documentId: uuid("document_id").primaryKey().references(() => documents.id, { onDelete: "cascade" }),
+  content: bytea("content").notNull(),
+});
+
+// Where a document is in the extract -> review -> confirm flow. Kept apart
+// from documents.processing_status so that enum did not need to grow.
+export const extractionStatus = pgEnum("extraction_status", ["processing", "needs_review", "confirmed", "failed"]);
+
+// One extraction per document. `extracted` is what the parser read (NOT
+// trusted); `confirmed` stays null until the user reviews and confirms, and
+// is the only part any calculation may read.
+export const documentExtractions = pgTable("document_extractions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  documentId: uuid("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  extractorVersion: text("extractor_version").notNull(),
+  status: extractionStatus("status").notNull(),
+  extracted: jsonb("extracted").notNull(),
+  confirmed: jsonb("confirmed"),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  // Plain-language reason when status is "failed". Never contains document text.
+  failureMessage: text("failure_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("document_extractions_document_id_unique").on(table.documentId),
+  index("document_extractions_user_id_idx").on(table.userId),
 ]);

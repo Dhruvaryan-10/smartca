@@ -7,6 +7,8 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { transactions } from "@/db/schema";
+import { parseIsoDate } from "@/lib/date-parse";
+import { MAX_MONEY_PAISE } from "@/lib/money-input";
 import { NotFoundError, ValidationError } from "./errors";
 
 const TRANSACTION_TYPES = new Set(["income", "expense"]);
@@ -32,8 +34,16 @@ function assertValidCreateInput(input: NewTransactionInput) {
   if (!input.category || !input.category.trim()) {
     throw new ValidationError("category is required.");
   }
-  if (!input.occurredOn || Number.isNaN(Date.parse(input.occurredOn))) {
-    throw new ValidationError("occurredOn must be a valid date.");
+  assertValidOccurredOn(input.occurredOn);
+}
+
+// A real calendar date written exactly as YYYY-MM-DD. This used to be
+// `Date.parse`, which accepted "garbage 1", rolled "2026-02-30" over to
+// 2 March, and read "05/03/2026" differently from Postgres, so what was
+// checked was not what was stored.
+function assertValidOccurredOn(occurredOn: unknown): void {
+  if (typeof occurredOn !== "string" || parseIsoDate(occurredOn) === null) {
+    throw new ValidationError("occurredOn must be a valid date in YYYY-MM-DD format.");
   }
 }
 
@@ -77,6 +87,7 @@ export async function updateTransaction(userId: string, id: string, input: Trans
   if (input.amountPaise !== undefined && (!Number.isInteger(input.amountPaise) || input.amountPaise <= 0)) {
     throw new ValidationError("amountPaise must be a positive integer.");
   }
+  if (input.occurredOn !== undefined) assertValidOccurredOn(input.occurredOn);
 
   const [row] = await db
     .update(transactions)
@@ -107,4 +118,79 @@ export async function deleteTransaction(userId: string, id: string): Promise<voi
     .returning({ id: transactions.id });
 
   if (!row) throw new NotFoundError("Transaction not found.");
+}
+
+// ---------------------------------------------------------------------
+// Phase 4: batch insert for CSV import
+// ---------------------------------------------------------------------
+
+export type ImportedTransactionInput = {
+  type: "income" | "expense";
+  amountPaise: number;
+  category: string;
+  description: string | null;
+  occurredOn: string; // YYYY-MM-DD
+  /** Deterministic per-row hash (lib/csv-import.ts); unique per user. */
+  importFingerprint: string;
+};
+
+// 7 bound values per row; Postgres allows 65,535 parameters per statement.
+const INSERT_CHUNK_SIZE = 1000;
+
+type InsertExecutor = Pick<typeof db, "insert">;
+
+function assertValidImportedRow(row: ImportedTransactionInput): void {
+  assertValidCreateInput({
+    type: row.type,
+    amountPaise: row.amountPaise,
+    category: row.category,
+    occurredOn: row.occurredOn,
+  });
+  if (row.amountPaise > MAX_MONEY_PAISE) throw new ValidationError("amountPaise is larger than supported.");
+  if (typeof row.importFingerprint !== "string" || row.importFingerprint === "") {
+    throw new ValidationError("importFingerprint is required.");
+  }
+}
+
+/**
+ * Insert already-validated CSV rows for `userId`, tagged with their batch
+ * and `source = "csv_import"`. A row whose fingerprint the user already has
+ * is skipped, not an error, so re-importing a file adds nothing. Returns the
+ * fingerprints that were actually inserted.
+ *
+ * Every row is checked again here, before anything is written, so this
+ * function never depends on its caller having validated. Run it inside a
+ * transaction (pass `executor`) for an all-or-nothing import.
+ */
+export async function insertImportedTransactions(
+  userId: string,
+  batchId: string,
+  rows: ImportedTransactionInput[],
+  executor: InsertExecutor = db,
+): Promise<Set<string>> {
+  for (const row of rows) assertValidImportedRow(row);
+
+  const inserted = new Set<string>();
+  for (let start = 0; start < rows.length; start += INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(start, start + INSERT_CHUNK_SIZE);
+    const returned = await executor
+      .insert(transactions)
+      .values(
+        chunk.map((row) => ({
+          userId,
+          type: row.type,
+          amountPaise: row.amountPaise,
+          category: row.category.trim(),
+          description: row.description,
+          source: "csv_import",
+          occurredOn: row.occurredOn,
+          importFingerprint: row.importFingerprint,
+          importBatchId: batchId,
+        })),
+      )
+      .onConflictDoNothing({ target: [transactions.userId, transactions.importFingerprint] })
+      .returning({ fingerprint: transactions.importFingerprint });
+    for (const { fingerprint } of returned) if (fingerprint) inserted.add(fingerprint);
+  }
+  return inserted;
 }

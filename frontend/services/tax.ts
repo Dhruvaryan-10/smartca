@@ -39,6 +39,8 @@ import type {
 } from "@/tax-engine";
 import { NotAuthenticatedError, ValidationError } from "./errors";
 import { removeDeductionForSection, upsertDeduction } from "./deductions";
+import { listConfirmedForm16 } from "./form16";
+import type { Form16Suggestion } from "./form16";
 import { listTaxComputationsForYear, saveTaxComputationRun } from "./tax-computations";
 import { listTransactions } from "./transactions";
 
@@ -102,6 +104,12 @@ export type TaxWorkspace = {
   ledgerSuggestion: LedgerIncomeSuggestion | null;
   /** Most recent first, at most MAX_SAVED_RUNS. */
   savedRuns: SavedTaxRun[];
+  /**
+   * Form 16 values the user has CONFIRMED for this year. Offered as an
+   * explicit "use these" suggestion; never applied automatically, and
+   * nothing extracted-but-unconfirmed ever appears here.
+   */
+  form16Suggestions: Form16Suggestion[];
 };
 
 const MAX_SAVED_RUNS = 5;
@@ -387,9 +395,10 @@ export async function getTaxWorkspace(userId: string, requestedLabel?: string): 
   if (!label || !supported.includes(label)) throw new UnsupportedAssessmentYearError(label ?? "");
 
   const year = await loadAssessmentYear(label);
-  const [savedRuns, ledgerSuggestion] = await Promise.all([
+  const [savedRuns, ledgerSuggestion, form16Suggestions] = await Promise.all([
     loadSavedRuns(userId, year.id),
     loadLedgerSuggestion(userId, year),
+    listConfirmedForm16(userId, label),
   ]);
 
   return {
@@ -397,5 +406,6 @@ export async function getTaxWorkspace(userId: string, requestedLabel?: string): 
     supportedAssessmentYears: supported,
     ledgerSuggestion,
     savedRuns,
+    form16Suggestions,
   };
 }

@@ -16,6 +16,9 @@ test("G. document ownership is enforced", async () => {
       documentType: "form16",
       filename: "form16-fy2025-26.pdf",
       storageRef: "test://placeholder",
+      contentType: "application/pdf",
+      sizeBytes: 0,
+      sha256: "1".repeat(64),
     });
     assert.equal(created.userId, userA.id);
 

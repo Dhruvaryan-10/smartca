@@ -32,3 +32,51 @@ export class EmailAlreadyRegisteredError extends Error {
     this.name = "EmailAlreadyRegisteredError";
   }
 }
+
+// ---------------------------------------------------------------------
+// Phase 4: documents and imports
+// ---------------------------------------------------------------------
+
+/** The request conflicts with existing state (for example the same file uploaded twice). HTTP 409. */
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConflictError";
+  }
+}
+
+/** The upload is larger than allowed. HTTP 413. */
+export class PayloadTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PayloadTooLargeError";
+  }
+}
+
+/** The bytes are not the kind of file this endpoint accepts. HTTP 415. */
+export class UnsupportedMediaTypeError extends Error {
+  constructor(
+    message: string,
+    readonly code = "unsupported_media_type",
+  ) {
+    super(message);
+    this.name = "UnsupportedMediaTypeError";
+  }
+}
+
+/**
+ * The request was understood and the file is the right kind, but its
+ * content cannot be used (an encrypted PDF, a scanned Form 16, a CSV with
+ * invalid rows). HTTP 422. `code` is stable for clients; `details` carries
+ * structured, content-free information such as row-level CSV errors.
+ */
+export class UnprocessableContentError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly details?: unknown,
+  ) {
+    super(message);
+    this.name = "UnprocessableContentError";
+  }
+}

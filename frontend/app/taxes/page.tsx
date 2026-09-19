@@ -197,6 +197,7 @@ export default function TaxesPage() {
             calculating={calc.status === "loading"}
             assessmentYear={workspace.assessmentYear}
             ledgerSuggestion={workspace.ledgerSuggestion}
+            form16Suggestions={workspace.form16Suggestions}
             prefilledFromSaved={prefilled}
           />
 

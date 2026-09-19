@@ -3,7 +3,15 @@
 // details (stack traces, SQL, file paths); unexpected errors are logged
 // server-side and returned to the client as a plain 500.
 import { NextResponse } from "next/server";
-import { NotAuthenticatedError, NotFoundError, ValidationError } from "@/services/errors";
+import {
+  ConflictError,
+  NotAuthenticatedError,
+  NotFoundError,
+  PayloadTooLargeError,
+  UnprocessableContentError,
+  UnsupportedMediaTypeError,
+  ValidationError,
+} from "@/services/errors";
 import {
   TaxEngineInternalError,
   TaxInputValidationError,
@@ -42,6 +50,24 @@ export function respondToError(err: unknown): NextResponse {
   }
   if (err instanceof ValidationError) {
     return NextResponse.json({ error: err.message }, { status: 400 });
+  }
+  // Documents and imports. Messages are written for the person uploading and
+  // never contain any of the file's content. `details` is structured and
+  // content-free (for example row numbers and reasons for a CSV).
+  if (err instanceof ConflictError) {
+    return NextResponse.json({ error: err.message, code: "conflict" }, { status: 409 });
+  }
+  if (err instanceof PayloadTooLargeError) {
+    return NextResponse.json({ error: err.message, code: "payload_too_large" }, { status: 413 });
+  }
+  if (err instanceof UnsupportedMediaTypeError) {
+    return NextResponse.json({ error: err.message, code: err.code }, { status: 415 });
+  }
+  if (err instanceof UnprocessableContentError) {
+    return NextResponse.json(
+      { error: err.message, code: err.code, ...(err.details !== undefined ? { details: err.details } : {}) },
+      { status: 422 },
+    );
   }
   console.error("Unhandled API error:", err);
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });

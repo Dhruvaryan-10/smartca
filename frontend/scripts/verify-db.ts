@@ -203,6 +203,9 @@ async function main() {
           documentType: "form16",
           filename: "verify-db-test.pdf",
           storageRef: "verify-db://placeholder",
+          contentType: "application/pdf",
+          sizeBytes: 0,
+          sha256: "0".repeat(64),
         })
         .returning();
       record(

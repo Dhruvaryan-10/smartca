@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { ChangeEvent } from "react";
 import { deductionCapsFor, resolveAssessmentYearRules } from "@/tax-engine";
 import type { AgeCategory, ComparisonInput } from "@/tax-engine";
+import type { Form16Suggestion } from "@/services/form16";
 import type { AssessmentYearInfo, LedgerIncomeSuggestion } from "@/services/tax";
 import { formatDate, formatRupees } from "@/lib/format";
 import { formatPaiseForInput, parseRupeesToPaise } from "@/lib/money-input";
@@ -143,6 +144,7 @@ export default function TaxForm({
   calculating,
   assessmentYear,
   ledgerSuggestion,
+  form16Suggestions,
   prefilledFromSaved,
 }: {
   values: TaxFormValues;
@@ -153,6 +155,8 @@ export default function TaxForm({
   calculating: boolean;
   assessmentYear: AssessmentYearInfo;
   ledgerSuggestion: LedgerIncomeSuggestion | null;
+  /** Values the user confirmed in the Vault. Offered, never applied automatically. */
+  form16Suggestions: Form16Suggestion[];
   prefilledFromSaved: boolean;
 }) {
   const [ledgerTarget, setLedgerTarget] = useState<LedgerTarget>("salary");
@@ -201,6 +205,30 @@ export default function TaxForm({
         <p className="mt-3 text-[13px] text-muted-foreground">
           Enter gross amounts before any deductions. Amounts like 1,50,000 or 1,50,000.50 are fine.
         </p>
+
+        {form16Suggestions.map((s) => (
+          <div key={s.documentId} className="mt-5 rounded-[var(--radius-md)] border border-border p-4 text-[13px]">
+            <p className="text-foreground">
+              A Form 16 you confirmed{s.employerName ? ` (${s.employerName})` : ""} gives salary income of{" "}
+              <span className="font-numeric font-medium">{formatRupees(s.salaryIncomePaise)}</span>: gross salary{" "}
+              {formatRupees(s.grossSalaryPaise)} less {formatRupees(s.section10ExemptionsPaise)} exempt under Section 10.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              These are the values you confirmed in the Vault. Nothing is filled in until you choose. The standard deduction is
+              applied by the calculation itself.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button type="button" variant="secondary" size="sm" onClick={() => set("salary", formatPaiseForInput(s.salaryIncomePaise))}>
+                Use {formatRupees(s.salaryIncomePaise)} as salary
+              </Button>
+              {s.section80CPaise !== null && s.section80CPaise > 0 && (
+                <Button type="button" variant="secondary" size="sm" onClick={() => set("section80C", formatPaiseForInput(s.section80CPaise as number))}>
+                  Use {formatRupees(s.section80CPaise)} as Section 80C
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
 
         {ledgerSuggestion && (
           <div className="mt-5 rounded-[var(--radius-md)] border border-border p-4 text-[13px]">
