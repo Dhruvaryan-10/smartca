@@ -210,14 +210,15 @@ test("new regime, just above ₹12,00,000: verified marginal relief now computes
   assertReconciles(result);
 });
 
-test("old regime, just above ₹5,00,000: marginal relief remains unverified and blocked (distinct from the new-regime formula)", () => {
-  assert.throws(
-    () =>
-      calculateTax(
-        oldRegimeInput(0, { incomeSources: [{ kind: "other", label: "Other", amountPaise: rupees(5_00_006) }] }),
-      ),
-    UnsupportedTaxRuleError,
+test("old regime, just above ₹5,00,000: no rebate and no refusal (Phase 3 removed the old refusal band)", () => {
+  // The Income Tax Department's AY 2026-27 guidance gives the old-regime rebate only "where taxable
+  // income shall not exceed 5,00,000" and describes marginal relief for surcharge only, so above the
+  // threshold the rebate is simply nil. Detailed cases live in tax-caps.test.ts.
+  const result = calculateTax(
+    oldRegimeInput(0, { incomeSources: [{ kind: "other", label: "Other", amountPaise: rupees(5_00_006) }] }),
   );
+  assert.equal(result.rebatePaise, 0);
+  assertReconciles(result);
 });
 
 test("well above the 87A threshold (relief cannot possibly matter) computes normally, zero rebate", () => {
@@ -261,7 +262,7 @@ test("15b. supported 80D deduction under the old regime is accepted alongside 80
     oldRegimeInput(8_00_000, {
       deductions: [
         { section: "80C", amountPaise: rupees(1_50_000) },
-        { section: "80D", amountPaise: rupees(25_000) },
+        { section: "80D", selfFamilyPaise: rupees(25_000), parentsPaise: 0 },
       ],
     }),
   );
@@ -271,7 +272,7 @@ test("15b. supported 80D deduction under the old regime is accepted alongside 80
 
 test("16. an unsupported deduction section is rejected with a validation error, not silently accepted", () => {
   assert.throws(
-    () => calculateTax(oldRegimeInput(8_00_000, { deductions: [{ section: "80G", amountPaise: rupees(10_000) }] })),
+    () => calculateTax(oldRegimeInput(8_00_000, { deductions: [{ section: "80G", amountPaise: rupees(10_000) } as never] })),
     TaxInputValidationError,
   );
 });
@@ -436,7 +437,7 @@ test("24. multiple income sources of the same kind are aggregated correctly unde
 test("engineVersion and rulesVersion are stamped on every result", () => {
   const result = calculateTax(newRegimeInput(5_00_000));
   assert.equal(result.engineVersion, ENGINE_VERSION);
-  assert.equal(result.rulesVersion, "ay-2026-27-v2");
+  assert.equal(result.rulesVersion, "ay-2026-27-v3");
   assert.equal(result.assessmentYearLabel, "2026-27");
 });
 
@@ -843,7 +844,7 @@ test("every non-leaf node in BOTH trees reconciles via the exact same rule — n
         { kind: "business", label: "Freelance", amountPaise: rupees(2_00_000) },
         { kind: "other", label: "Bank Interest", amountPaise: rupees(50_000) },
       ],
-      deductions: [{ section: "80D", amountPaise: rupees(25_000) }],
+      deductions: [{ section: "80D", selfFamilyPaise: rupees(25_000), parentsPaise: 0 }],
     }),
   );
 

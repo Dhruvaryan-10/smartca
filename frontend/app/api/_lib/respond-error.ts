@@ -4,8 +4,35 @@
 // server-side and returned to the client as a plain 500.
 import { NextResponse } from "next/server";
 import { NotAuthenticatedError, NotFoundError, ValidationError } from "@/services/errors";
+import {
+  TaxEngineInternalError,
+  TaxInputValidationError,
+  UnsupportedAssessmentYearError,
+  UnsupportedTaxRuleError,
+} from "@/tax-engine";
 
 export function respondToError(err: unknown): NextResponse {
+  // Tax-engine errors carry a stable `code` so the client can tell them
+  // apart. Their messages are written for people (never stack traces, SQL
+  // or paths), except an engine self-check failure, which is a bug and
+  // gets a generic message.
+  if (err instanceof TaxInputValidationError) {
+    return NextResponse.json({ error: err.message, code: "invalid_tax_input" }, { status: 400 });
+  }
+  if (err instanceof UnsupportedAssessmentYearError) {
+    return NextResponse.json({ error: err.message, code: "unsupported_assessment_year" }, { status: 422 });
+  }
+  if (err instanceof UnsupportedTaxRuleError) {
+    return NextResponse.json({ error: err.message, code: "unsupported_tax_rule" }, { status: 422 });
+  }
+  if (err instanceof TaxEngineInternalError) {
+    console.error("Tax engine self-check failed:", err);
+    return NextResponse.json(
+      { error: "The tax calculation could not be completed. Please try again later.", code: "tax_engine_error" },
+      { status: 500 },
+    );
+  }
+
   if (err instanceof NotAuthenticatedError) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

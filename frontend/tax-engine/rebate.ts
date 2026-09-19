@@ -7,13 +7,13 @@
 // matched a separately-cited figure — see that report for the full
 // evidence).
 //
-// OLD REGIME marginal relief is DELIBERATELY still blocked. The Phase
-// 1C-B audit explicitly did not re-verify the old-regime (₹5L threshold)
-// marginal-relief formula with the same rigor as the new-regime case —
-// its own report says so under "Rules that MUST remain blocked." Do not
-// assume the same formula applies just because both are "Section 87A
-// marginal relief" — they were verified to different standards, and only
-// the new-regime one has been implemented.
+// OLD REGIME has no marginal relief. The Income Tax Department's AY
+// 2026-27 guidance states the old-regime rebate as ₹12,500 where "Taxable
+// income shall not exceed 5,00,000", and describes marginal relief only
+// for surcharge (evidence record: rules/ay-2026-27.ts). Above the threshold
+// the old-regime rebate is therefore simply nil. Earlier versions of this
+// engine refused that band instead; that refusal was removed in Phase 3.
+// Do not add old-regime relief without a primary source that establishes it.
 //
 // SCOPE: the new-regime formula below is verified and implemented ONLY
 // for this engine's ordinary-income model (salary/business/other). Per
@@ -25,7 +25,6 @@
 // applies cleanly. The moment capital-gains support is added, this
 // function's `taxableIncomePaise` input must be re-scoped to ordinary-
 // rate taxable income only — never the blended total.
-import { UnsupportedTaxRuleError } from "./types";
 import type { ComputationNode, RebateRules, TaxRegime } from "./types";
 
 /**
@@ -57,14 +56,11 @@ export function computeRebate(
     };
   }
 
-  const excessIncomePaise = taxableIncomePaise - rules.thresholdPaise;
-
-  if (taxBeforeRebatePaise <= excessIncomePaise) {
-    // Above threshold, but the ordinary slab tax is already no more than
-    // the excess income — capping would change nothing regardless of
-    // which formula applies. Safe for both regimes.
+  if (regime === "old") {
+    // Above the threshold the old-regime rebate is simply nil, and there is
+    // no marginal relief (see the note at the top of this file).
     return {
-      label: `${rules.sourceSection} rebate (not applicable — above threshold, relief not needed)`,
+      label: `${rules.sourceSection} rebate (not applicable — above the income threshold)`,
       amountPaise: 0,
       kind: "rebate",
       sourceSection: rules.sourceSection,
@@ -72,15 +68,18 @@ export function computeRebate(
     };
   }
 
-  if (regime === "old") {
-    // This IS the marginal-relief zone, and the old-regime formula was
-    // not verified in the Phase 1C-B audit — refuse rather than guess.
-    throw new UnsupportedTaxRuleError(
-      `Taxable income of ${taxableIncomePaise} paise is in the old-regime ${rules.sourceSection} ` +
-      `marginal-relief zone above the ₹5,00,000 threshold. That formula was not independently verified ` +
-      `in the Phase 1C-B audit (unlike the new-regime formula, which was) — this engine refuses to ` +
-      `compute a result here rather than assume the same formula applies.`,
-    );
+  const excessIncomePaise = taxableIncomePaise - rules.thresholdPaise;
+
+  if (taxBeforeRebatePaise <= excessIncomePaise) {
+    // Above threshold, but the ordinary slab tax is already no more than
+    // the excess income — capping would change nothing.
+    return {
+      label: `${rules.sourceSection} rebate (not applicable — above threshold, relief not needed)`,
+      amountPaise: 0,
+      kind: "rebate",
+      sourceSection: rules.sourceSection,
+      children: [],
+    };
   }
 
   // New regime, verified: cap tax to the excess income over the

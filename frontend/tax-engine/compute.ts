@@ -7,12 +7,16 @@
 // marginal-relief safety gate, not a stub, so it earns its own file the
 // same way slabs/rebate/cess did.)
 import { roundToNearestTenRupees } from "./rounding";
+import { resolveAssessmentYearRules } from "./rules";
 import {
+  TaxEngineInternalError,
   TaxInputValidationError,
   UnsupportedTaxRuleError,
   type AgeCategory,
   type ComputationNode,
+  type DeductionAdjustment,
   type DeductionInput,
+  type DeductionLimits,
   type IncomeSource,
   type RegimeRules,
   type TaxInput,
@@ -73,6 +77,9 @@ export function validateInput(input: TaxInput): void {
   if (!Array.isArray(input.deductions)) {
     throw new TaxInputValidationError("deductions must be an array.");
   }
+  // One entry per section. A repeated section would otherwise be summed
+  // silently, which is a double count the taxpayer never intended.
+  const seenSections = new Set<string>();
   for (const deduction of input.deductions) {
     if (!deduction || typeof deduction !== "object") {
       throw new TaxInputValidationError("Each deduction must be an object.");
@@ -80,9 +87,44 @@ export function validateInput(input: TaxInput): void {
     if (typeof deduction.section !== "string" || !deduction.section.trim()) {
       throw new TaxInputValidationError("Each deduction must have a non-empty section.");
     }
-    assertIntegerPaise(deduction.amountPaise, `Deduction "${deduction.section}"`);
-    if (deduction.amountPaise <= 0) {
-      throw new TaxInputValidationError(`Deduction "${deduction.section}" must be a positive amount.`);
+    if (seenSections.has(deduction.section)) {
+      throw new TaxInputValidationError(
+        `Duplicate deduction section "${deduction.section}": declare each section once, with its total.`,
+      );
+    }
+    seenSections.add(deduction.section);
+
+    if (deduction.section === "80D") {
+      validate80DInput(deduction);
+    } else {
+      const amountPaise = (deduction as { amountPaise: number }).amountPaise;
+      assertIntegerPaise(amountPaise, `Deduction "${deduction.section}"`);
+      if (amountPaise <= 0) {
+        throw new TaxInputValidationError(`Deduction "${deduction.section}" must be a positive amount.`);
+      }
+    }
+  }
+}
+
+// Section 80D is structured (self/family and parents), so it has its own
+// shape check. Zero is a valid "nothing claimed" value for either part.
+function validate80DInput(deduction: object): void {
+  const d = deduction as Record<string, unknown>;
+  for (const field of ["selfFamilyPaise", "parentsPaise"] as const) {
+    const value = d[field];
+    if (typeof value !== "number") {
+      throw new TaxInputValidationError(
+        `Section 80D requires "selfFamilyPaise" and "parentsPaise" (integer paise, 0 if none); "${field}" is missing or not a number.`,
+      );
+    }
+    assertIntegerPaise(value, `Section 80D ${field}`);
+    if (value < 0) {
+      throw new TaxInputValidationError(`Section 80D ${field} cannot be negative.`);
+    }
+  }
+  for (const flag of ["spouseIsSenior", "anyParentIsSenior"] as const) {
+    if (d[flag] !== undefined && typeof d[flag] !== "boolean") {
+      throw new TaxInputValidationError(`Section 80D "${flag}" must be true or false when provided.`);
     }
   }
 }
@@ -156,14 +198,58 @@ export function aggregateIncome(incomeSources: IncomeSource[]): {
 // Deductions
 // ---------------------------------------------------------------------
 
+const formatRupeesForLabel = (paise: number): string =>
+  `₹${new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(paise / 100)}`;
+
+type SituationFor80D = {
+  ageCategory: AgeCategory;
+  spouseIsSenior?: boolean;
+  anyParentIsSenior?: boolean;
+};
+
+/**
+ * The Section 80D limits that apply to a taxpayer. The taxpayer's own senior
+ * status comes from the age category; a senior spouse also raises the
+ * self/family limit ("if any person is a Senior Citizen"); the parents limit
+ * depends only on whether a parent is a senior. Single source of truth for
+ * both the calculation below and `deductionCapsFor`.
+ */
+function select80DCaps(limits: DeductionLimits, situation: SituationFor80D): { selfFamilyPaise: number; parentsPaise: number } {
+  const selfFamilyIsSenior = situation.ageCategory !== "below60" || situation.spouseIsSenior === true;
+  const { selfFamilyPaise, parentsPaise } = limits.section80D;
+  return {
+    selfFamilyPaise: selfFamilyIsSenior ? selfFamilyPaise.senior : selfFamilyPaise.standard,
+    parentsPaise: situation.anyParentIsSenior === true ? parentsPaise.senior : parentsPaise.standard,
+  };
+}
+
+export type DeductionCaps = {
+  section80CPaise: number;
+  selfFamilyPaise: number;
+  parentsPaise: number;
+};
+
+/**
+ * The deduction limits that apply for an assessment year and taxpayer
+ * situation, straight from the rules data. Pure and safe to call from UI
+ * code, so limits shown to a user can never drift from the ones enforced.
+ */
+export function deductionCapsFor(assessmentYearLabel: string, situation: SituationFor80D): DeductionCaps {
+  const { deductionLimits } = resolveAssessmentYearRules(assessmentYearLabel);
+  return { section80CPaise: deductionLimits.section80CPaise, ...select80DCaps(deductionLimits, situation) };
+}
+
 export function applyDeductions(
   salaryIncomePaise: number,
   deductions: DeductionInput[],
   regimeRules: RegimeRules,
   regime: TaxRegime,
   supportedSections: string[],
-): { totalDeductionsPaise: number; nodes: ComputationNode[] } {
+  limits: DeductionLimits,
+  ageCategory: AgeCategory,
+): { totalDeductionsPaise: number; nodes: ComputationNode[]; adjustments: DeductionAdjustment[] } {
   const nodes: ComputationNode[] = [];
+  const adjustments: DeductionAdjustment[] = [];
   let totalDeductionsPaise = 0;
 
   // Standard deduction: verified for both regimes, capped at actual
@@ -181,7 +267,7 @@ export function applyDeductions(
   }
 
   if (deductions.length === 0) {
-    return { totalDeductionsPaise, nodes };
+    return { totalDeductionsPaise, nodes, adjustments };
   }
 
   for (const deduction of deductions) {
@@ -209,18 +295,97 @@ export function applyDeductions(
     );
   }
 
-  for (const deduction of deductions) {
+  // One claimed component against its statutory limit. The full claim is
+  // shown as a deduction node and any excess over the limit is added back
+  // by a separate, visible node, so the tree always reconciles and the
+  // disallowed amount is never hidden.
+  function addCapped(args: {
+    claimLabel: string;
+    claimSection: string;
+    component: DeductionAdjustment["component"];
+    declaredPaise: number;
+    capPaise: number;
+    excessLabelPrefix: string;
+    limitSection: string;
+  }): void {
+    const allowedPaise = Math.min(args.declaredPaise, args.capPaise);
     nodes.push({
-      label: `Section ${deduction.section} Deduction`,
-      amountPaise: -deduction.amountPaise,
+      label: args.claimLabel,
+      amountPaise: -args.declaredPaise,
       kind: "deduction",
-      sourceSection: deduction.section,
+      sourceSection: args.claimSection,
       children: [],
     });
-    totalDeductionsPaise += deduction.amountPaise;
+    if (args.declaredPaise > allowedPaise) {
+      const excessPaise = args.declaredPaise - allowedPaise;
+      nodes.push({
+        label:
+          `${args.excessLabelPrefix}: ${formatRupeesForLabel(excessPaise)} over the ` +
+          `${formatRupeesForLabel(args.capPaise)} limit — not allowed`,
+        amountPaise: excessPaise,
+        kind: "deduction",
+        sourceSection: args.limitSection,
+        children: [],
+      });
+    }
+    adjustments.push({
+      component: args.component,
+      declaredPaise: args.declaredPaise,
+      allowedPaise,
+      capPaise: args.capPaise,
+    });
+    totalDeductionsPaise += allowedPaise;
   }
 
-  return { totalDeductionsPaise, nodes };
+  for (const deduction of deductions) {
+    if (deduction.section === "80C") {
+      addCapped({
+        claimLabel: "Section 80C Deduction",
+        claimSection: "80C",
+        component: "80C",
+        declaredPaise: deduction.amountPaise,
+        capPaise: limits.section80CPaise,
+        excessLabelPrefix: "Section 80C",
+        limitSection: "Section 80CCE",
+      });
+    } else if (deduction.section === "80D") {
+      const caps = select80DCaps(limits, {
+        ageCategory,
+        spouseIsSenior: deduction.spouseIsSenior,
+        anyParentIsSenior: deduction.anyParentIsSenior,
+      });
+      if (deduction.selfFamilyPaise > 0) {
+        addCapped({
+          claimLabel: "Section 80D Deduction (self/family)",
+          claimSection: "80D",
+          component: "80D-self-family",
+          declaredPaise: deduction.selfFamilyPaise,
+          capPaise: caps.selfFamilyPaise,
+          excessLabelPrefix: "Section 80D (self/family)",
+          limitSection: "Section 80D",
+        });
+      }
+      if (deduction.parentsPaise > 0) {
+        addCapped({
+          claimLabel: "Section 80D Deduction (parents)",
+          claimSection: "80D",
+          component: "80D-parents",
+          declaredPaise: deduction.parentsPaise,
+          capPaise: caps.parentsPaise,
+          excessLabelPrefix: "Section 80D (parents)",
+          limitSection: "Section 80D",
+        });
+      }
+    } else {
+      // A section listed as supported in the rules but with no handler here
+      // is an engine bug, never a caller error.
+      throw new TaxEngineInternalError(
+        `Deduction section "${(deduction as { section: string }).section}" is registered as supported but has no handler.`,
+      );
+    }
+  }
+
+  return { totalDeductionsPaise, nodes, adjustments };
 }
 
 // ---------------------------------------------------------------------

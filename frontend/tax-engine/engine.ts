@@ -22,9 +22,9 @@ import { computeRebate } from "./rebate";
 import { computeSlabTax } from "./slabs";
 import { computeSurcharge } from "./surcharge";
 import { resolveAssessmentYearRules } from "./rules";
-import type { ComputationNode, TaxInput, TaxResult } from "./types";
+import { TaxEngineInternalError, type ComputationNode, type TaxInput, type TaxResult } from "./types";
 
-export const ENGINE_VERSION = "tax-engine-v1";
+export const ENGINE_VERSION = "tax-engine-v2";
 
 export function calculateTax(input: TaxInput): TaxResult {
   // 1. Validate input (including the now-required ageCategory).
@@ -49,12 +49,14 @@ export function calculateTax(input: TaxInput): TaxResult {
   //    80C/80D only where the regime's eligibility is verified as
   //    permitted — throws UnsupportedTaxRuleError otherwise, with a
   //    regime-specific message).
-  const { totalDeductionsPaise, nodes: deductionNodes } = applyDeductions(
+  const { totalDeductionsPaise, nodes: deductionNodes, adjustments: deductionAdjustments } = applyDeductions(
     salaryIncomePaise,
     input.deductions,
     regimeRules,
     input.regime,
     ayRules.supportedDeductionSections,
+    ayRules.deductionLimits,
+    input.ageCategory,
   );
 
   // 5-6. Taxable income: floored at zero, then Section 288A rounding
@@ -131,7 +133,7 @@ export function calculateTax(input: TaxInput): TaxResult {
   if (!reconcile(totalNode) || !reconcile(taxableIncomeNode)) {
     // This would indicate a bug in the engine itself, not a bad input —
     // never silently return a result that fails its own reconciliation.
-    throw new Error(
+    throw new TaxEngineInternalError(
       "Tax engine internal error: computation tree failed reconciliation. This is an engine bug, not " +
       "a user input problem — please report it rather than trusting this result.",
     );
@@ -146,6 +148,7 @@ export function calculateTax(input: TaxInput): TaxResult {
     ageCategory: input.ageCategory,
     grossTotalIncomePaise,
     totalDeductionsPaise,
+    deductionAdjustments,
     taxableIncomePaise,
     taxBeforeRebatePaise: slabComputation.totalTaxPaise,
     // Math.abs, not unary `-`: rebateNode.amountPaise is always <= 0 by

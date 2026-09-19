@@ -1,28 +1,75 @@
-// AY 2026-27 (FY 2025-26) tax rules — v2.
+// AY 2026-27 (FY 2025-26) tax rules — v3.
 //
-// Changes from v1 (see MIGRATION-CHECKPOINT.md-style history in git for
-// the full Phase 1C-B verification report this is based on):
-//   - Added senior/super-senior old-regime slab tables (new-regime
-//     slabs remain deliberately identical across all age categories —
-//     Section 115BAC does not vary by age; a Phase 1C-B fetch artifact
-//     suggesting otherwise was investigated and explicitly rejected).
-//   - Added surcharge bracket tables, per regime.
-//   - Standard deduction, base slabs (below-60 old + new), and Section
-//     87A threshold/cap figures: all re-confirmed unchanged from v1.
+// Changes from v2 (Phase 3):
+//   - Added statutory Chapter VI-A deduction LIMITS as data
+//     (`deductionLimits`): Section 80C (combined limit under 80CCE) and
+//     the structured Section 80D limits (self/family and parents, each with
+//     a standard and a senior-citizen figure).
+//   - Old-regime Section 87A: above the ₹5,00,000 threshold there is no
+//     rebate. This is enforced in rebate.ts; there is no old-regime
+//     marginal relief (see "Section 87A" below).
+//   - Surcharge evidence upgraded: the bracket table and the marginal-
+//     relief wording are now confirmed against the Income Tax Department's
+//     own AY 2026-27 guidance (previously two secondary sources only).
+// Unchanged from v2: slabs, standard deductions, cess rate, new-regime 87A.
 //
-// SOURCING: new/old (below-60) slabs, standard deduction, and 87A
-// threshold/cap figures were cross-checked against the Income Tax
-// Department's own e-filing portal (incometax.gov.in, fetched directly)
-// in both Phase 1C and Phase 1C-B. Senior/super-senior old-regime slabs
-// were fetched directly from the same portal's "Senior Citizens and
-// Super Senior Citizens for AY 2026-2027" page in Phase 1C-B, and
-// independently corroborated by a second search. Surcharge bracket
-// figures are corroborated by TWO independent secondary sources across
-// both phases but were NOT independently fetched from a primary
-// government document — implemented per explicit Phase 1C-C direction,
-// with that evidence-level caveat documented honestly here rather than
-// overstated as fully primary-verified.
-import type { AssessmentYearRules, RegimeRules, SlabBracket, SurchargeBracket } from "../types";
+// ---------------------------------------------------------------------
+// EVIDENCE RECORD
+// ---------------------------------------------------------------------
+// Primary source for everything below unless noted: the Income Tax
+// Department e-filing portal's official AY 2026-27 guidance, fetched
+// directly (2026-09-19):
+//   [S1] https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-1
+//        "Salaried Individuals for AY 2026-27"
+//   [S2] https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-2
+//        "Senior Citizens and Super Senior Citizens for AY 2026-2027"
+// (The Department's other site, incometaxindia.gov.in, returned HTTP 403 to
+// automated fetches, so the raw statute text there could not be read; the
+// figures below are the Department's published guidance, not a paraphrase
+// from memory or a secondary source.)
+//
+// Section 87A [S1, "Applicable Rebate u/s 87A"] — "Resident Individuals are
+//   also eligible for a Rebate of up to 100% of income tax subject to a
+//   maximum limit depending on tax regimes":
+//     New Tax Regime: ₹60,000 — "Taxable income shall not exceed 12,00,000"
+//     Old Tax Regime: ₹12,500 — "Taxable income shall not exceed 5,00,000"
+//   The same page describes marginal relief ONLY for surcharge. It describes
+//   no marginal relief for Section 87A in the old regime, so none is
+//   implemented: above ₹5,00,000 the old-regime rebate is simply nil. (The
+//   new-regime 87A marginal relief is unchanged from earlier phases, where it
+//   was verified against CBDT guidance; see rebate.ts.) 87A is available to
+//   RESIDENT individuals only; the engine has no residency input, so that is
+//   an assumption the caller/UI must state.
+// Section 80C / 80CCE [S1] — "Section 80C, 80CCC, 80CCD (1)": "Combined
+//   deduction limit of ₹ 1,50,000". Section 80CCD(1B) (₹50,000) is a
+//   separate additional deduction and is NOT modelled.
+// Section 80D [S1 and S2] — "Deduction towards payments made to Health
+//   Insurance Premium & Preventive Health check up":
+//     For Self / Spouse or Dependent Children: "₹ 25,000 (₹ 50,000 if any
+//       person is a Senior Citizen)"
+//     For Parents: "₹ 25,000 (₹50,000 if any person is a Senior Citizen)"
+//     "₹ 5,000 for preventive health checkup, included in above limit"
+//   NOT modelled: the preventive-check-up sub-limit (it sits inside the
+//   limits above), payment-mode conditions, and the separate "medical
+//   expenditure on a senior citizen where no premium is paid" route
+//   (₹50,000 each for self/family and parents).
+// Senior citizen [S2] — "An individual resident who is 60 years or above in
+//   age but less than 80 years at any time during the previous year is
+//   considered as Senior Citizen … A Super Senior Citizen is an individual
+//   resident who is 80 years or above, at any time during the previous
+//   year." Both count as "senior" for the 80D self/family limit.
+// Cess [S1] — "Health & Education cess @ 4% to be paid on the amount of
+//   income tax plus Surcharge (if any) in both the regimes."
+// Surcharge [S1, "Applicable Surcharge Rates"] — up to ₹50 lakh nil;
+//   ₹50 lakh–₹1 crore 10%; ₹1–2 crore 15%; ₹2–5 crore 25%; above ₹5 crore
+//   25% (new regime) / 37% (old regime). Marginal relief at ₹50 lakh,
+//   ₹1 crore, ₹2 crore (and ₹5 crore, old regime only): "Amount payable as
+//   income tax and surcharge shall not exceed the total amount payable as
+//   income tax on total income of [threshold] by more than the amount of
+//   income that exceeds [threshold]".
+// Slabs, standard deduction: cross-checked against the same portal in
+//   earlier phases (1C and 1C-B); unchanged here.
+import type { AssessmentYearRules, DeductionLimits, RegimeRules, SlabBracket, SurchargeBracket } from "../types";
 
 // ---------------------------------------------------------------------
 // New-regime slabs (Section 115BAC) — identical for every age category.
@@ -61,10 +108,10 @@ const OLD_REGIME_SLABS_SUPER_SENIOR: SlabBracket[] = [
 ];
 
 // ---------------------------------------------------------------------
-// Surcharge brackets — corroborated by two independent secondary
-// sources, NOT primary-fetched (see sourcing note above). New regime
-// caps at 25% from ₹2Cr onward (no further step at ₹5Cr); old regime
-// steps up again to 37% at ₹5Cr.
+// Surcharge brackets — confirmed against the Income Tax Department's AY
+// 2026-27 guidance [S1] (see the evidence record above). New regime caps
+// at 25% from ₹2Cr onward (no further step at ₹5Cr); old regime steps up
+// again to 37% at ₹5Cr.
 // ---------------------------------------------------------------------
 const SURCHARGE_BRACKETS_NEW: SurchargeBracket[] = [
   { label: "up to ₹50,00,000", fromPaise: 0, rateBasisPoints: 0 },
@@ -109,10 +156,24 @@ const OLD_REGIME: RegimeRules = {
   surchargeBrackets: SURCHARGE_BRACKETS_OLD,
 };
 
+// ---------------------------------------------------------------------
+// Statutory Chapter VI-A limits — evidence record above ([S1], [S2]).
+// Applied only under the old regime (the new regime refuses declared
+// deductions outright; see `deductionsSupported`).
+// ---------------------------------------------------------------------
+const DEDUCTION_LIMITS: DeductionLimits = {
+  section80CPaise: 1_50_000 * 100,
+  section80D: {
+    selfFamilyPaise: { standard: 25_000 * 100, senior: 50_000 * 100 },
+    parentsPaise: { standard: 25_000 * 100, senior: 50_000 * 100 },
+  },
+};
+
 export const AY_2026_27_RULES: AssessmentYearRules = {
   assessmentYearLabel: "2026-27",
-  rulesVersion: "ay-2026-27-v2",
+  rulesVersion: "ay-2026-27-v3",
   regimes: { new: NEW_REGIME, old: OLD_REGIME },
   cessRateBasisPoints: 400, // 4% Health & Education Cess
+  deductionLimits: DEDUCTION_LIMITS,
   supportedDeductionSections: ["80C", "80D"],
 };

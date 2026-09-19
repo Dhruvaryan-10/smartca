@@ -47,10 +47,42 @@ export type IncomeSource = {
   amountPaise: number;
 };
 
-export type DeductionInput = {
-  section: string;
+/**
+ * Section 80C (this engine's scope for the Section 80CCE combined limit:
+ * 80CCC and 80CCD(1) are not modelled). `amountPaise` is the amount the
+ * taxpayer CLAIMS; the engine clamps it to the statutory limit and shows
+ * the excess in the computation tree.
+ */
+export type Deduction80CInput = {
+  section: "80C";
   amountPaise: number;
 };
+
+/**
+ * Section 80D health-insurance / medical deduction, structured by who the
+ * premium covers because the limit differs: (a) self, spouse and dependent
+ * children, (b) parents. The senior-citizen flags decide which limit
+ * applies. The taxpayer's OWN senior status is not repeated here — it comes
+ * from `TaxInput.ageCategory`.
+ *
+ * Not modelled: the ₹5,000 preventive-check-up sub-limit (it is included
+ * within the limits, not additional), payment-mode conditions, and the
+ * separate medical-expenditure route. The amounts are taken as the
+ * eligible amount the taxpayer claims.
+ */
+export type Deduction80DInput = {
+  section: "80D";
+  /** Premium/eligible amount for self, spouse and dependent children. */
+  selfFamilyPaise: number;
+  /** Premium/eligible amount for parents. */
+  parentsPaise: number;
+  /** True if the taxpayer's spouse is a senior citizen (raises the self/family limit). */
+  spouseIsSenior?: boolean;
+  /** True if any parent is a senior citizen (raises the parents limit). */
+  anyParentIsSenior?: boolean;
+};
+
+export type DeductionInput = Deduction80CInput | Deduction80DInput;
 
 export type TaxInput = {
   assessmentYearLabel: string;
@@ -95,6 +127,20 @@ export type ComputationNode = {
   children: ComputationNode[];
 };
 
+/**
+ * How a claimed deduction compares with its statutory limit, one entry per
+ * claimed component (only components with a positive claim appear).
+ * `allowedPaise` is min(declared, cap).
+ */
+export type DeductionAdjustmentComponent = "80C" | "80D-self-family" | "80D-parents";
+
+export type DeductionAdjustment = {
+  component: DeductionAdjustmentComponent;
+  declaredPaise: number;
+  allowedPaise: number;
+  capPaise: number;
+};
+
 export type TaxResult = {
   engineVersion: string;
   rulesVersion: string;
@@ -102,7 +148,9 @@ export type TaxResult = {
   regime: TaxRegime;
   ageCategory: AgeCategory;
   grossTotalIncomePaise: number;
-  totalDeductionsPaise: number; // positive number, the magnitude actually applied
+  totalDeductionsPaise: number; // positive number, the magnitude actually applied (after statutory caps)
+  /** Claimed deductions vs their statutory limits. Empty when nothing was claimed. */
+  deductionAdjustments: DeductionAdjustment[];
   /** Section 288A-rounded taxable income — the figure slab tax is actually computed on. */
   taxableIncomePaise: number;
   taxBeforeRebatePaise: number;
@@ -191,11 +239,27 @@ export type RegimeRules = {
   surchargeBrackets: SurchargeBracket[];
 };
 
+/**
+ * Statutory Chapter VI-A limits, as data. Applied only where the regime
+ * honours deductions at all (`RegimeRules.deductionsSupported`).
+ */
+export type DeductionLimits = {
+  /** Combined limit for 80C (with 80CCC and 80CCD(1), which are not modelled) under Section 80CCE. */
+  section80CPaise: number;
+  section80D: {
+    /** Self, spouse and dependent children. `senior` applies if any of them is a senior citizen. */
+    selfFamilyPaise: { standard: number; senior: number };
+    /** Parents. `senior` applies if any parent is a senior citizen. */
+    parentsPaise: { standard: number; senior: number };
+  };
+};
+
 export type AssessmentYearRules = {
   assessmentYearLabel: string;
   rulesVersion: string;
   regimes: Record<TaxRegime, RegimeRules>;
   cessRateBasisPoints: number;
+  deductionLimits: DeductionLimits;
   /** The only deduction section codes this engine recognizes at all, regardless of regime. */
   supportedDeductionSections: string[];
 };
@@ -209,6 +273,18 @@ export class TaxInputValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "TaxInputValidationError";
+  }
+}
+
+/**
+ * The engine's own self-check failed (for example a computation tree that
+ * does not reconcile). This is a bug in the engine, never a problem with the
+ * caller's input, and must never be shown to a user as a tax result.
+ */
+export class TaxEngineInternalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TaxEngineInternalError";
   }
 }
 
