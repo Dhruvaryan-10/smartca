@@ -1,9 +1,10 @@
 "use client";
-import Navbar from "../components/Navbar";
-import Sidebar from "../components/Sidebar";
+import AppShell from "../components/AppShell";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
+import { Badge } from "../components/ui/Badge";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 // Shape returned by GET /api/transactions (services/transactions.ts —
 // Postgres/Drizzle rows, not the old Mongo shape). Money is integer
@@ -62,109 +63,70 @@ export default function TaxesPage() {
   const netIncome = totalIncome - estimatedTax;
 
   return (
-    <div className="flex min-h-screen bg-[#020617] text-white">
+    <AppShell>
+      <PageHeader
+        title="Tax"
+        description="Overview of your tax calculations"
+        actions={<Badge>AY 2026-27</Badge>}
+      />
 
-      {/* SIDEBAR */}
-      <Sidebar />
-
-      <div className="flex-1">
-
-        {/* NAVBAR */}
-        <Navbar />
-
-        <main className="p-6 space-y-6">
-
-          {/* HEADER */}
-          <div>
-            <h1 className="text-2xl font-bold">
-              Tax Summary
-            </h1>
-            <p className="text-slate-400">
-              Overview of your tax calculations
-            </p>
-          </div>
-
-          {/* CARDS */}
-          <div className="grid grid-cols-3 gap-6">
-            <StatCard title="Total Income" value={`₹${totalIncome}`} color="from-green-500 to-emerald-600" />
-            <StatCard title="Estimated Tax" value={`₹${estimatedTax}`} color="from-pink-500 to-rose-600" />
-            <StatCard title="Net Income" value={`₹${netIncome}`} color="from-blue-500 to-indigo-600" />
-          </div>
-
-          {/* TAX BREAKDOWN */}
-          <div className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-
-            <h3 className="text-teal-400 mb-4">
-              Tax Slabs
-            </h3>
-
-            <div className="space-y-2 text-slate-300">
-
-              <div className="flex justify-between">
-                <span>0 - 2.5L</span>
-                <span>0%</span>
-              </div>
-
-              <div className="flex justify-between">
-                <span>2.5L - 5L</span>
-                <span>5%</span>
-              </div>
-
-              <div className="flex justify-between">
-                <span>5L - 10L</span>
-                <span>20%</span>
-              </div>
-
-              <div className="flex justify-between">
-                <span>10L+</span>
-                <span>30%</span>
-              </div>
-
-            </div>
-          </div>
-
-          {/* SUMMARY BOX */}
-          <div className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-
-            <h3 className="text-teal-400 mb-4">
-              Summary
-            </h3>
-
-            <div className="space-y-3 text-slate-300">
-
-              <div className="flex justify-between">
-                <span>Taxable Income</span>
-                <span>₹{totalIncome}</span>
-              </div>
-
-              <div className="flex justify-between">
-                <span>Estimated Tax</span>
-                <span className="text-rose-400">
-                  ₹{estimatedTax}
-                </span>
-              </div>
-
-              <div className="flex justify-between font-semibold">
-                <span>Net Income</span>
-                <span className="text-green-400">
-                  ₹{netIncome}
-                </span>
-              </div>
-
-            </div>
-          </div>
-
-        </main>
+      {/* CARDS */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard title="Total Income" value={`₹${totalIncome}`} color="text-success" />
+        <StatCard title="Estimated Tax" value={`₹${estimatedTax}`} color="text-destructive" />
+        <StatCard title="Net Income" value={`₹${netIncome}`} color="text-foreground" />
       </div>
-    </div>
+
+      {/* TAX BREAKDOWN */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Tax Slabs</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
+          <div className="flex justify-between">
+            <span>0 - 2.5L</span>
+            <span className="font-numeric">0%</span>
+          </div>
+          <div className="flex justify-between">
+            <span>2.5L - 5L</span>
+            <span className="font-numeric">5%</span>
+          </div>
+          <div className="flex justify-between">
+            <span>5L - 10L</span>
+            <span className="font-numeric">20%</span>
+          </div>
+          <div className="flex justify-between">
+            <span>10L+</span>
+            <span className="font-numeric">30%</span>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* SUMMARY BOX */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Summary</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          <div className="flex justify-between text-muted-foreground">
+            <span>Taxable Income</span>
+            <span className="font-numeric text-foreground">₹{totalIncome}</span>
+          </div>
+          <div className="flex justify-between text-muted-foreground">
+            <span>Estimated Tax</span>
+            <span className="font-numeric text-destructive">₹{estimatedTax}</span>
+          </div>
+          <div className="flex justify-between font-semibold text-foreground">
+            <span>Net Income</span>
+            <span className="font-numeric text-success">₹{netIncome}</span>
+          </div>
+        </CardContent>
+      </Card>
+    </AppShell>
   );
 }
 
 /* ---------------- COMPONENTS ---------------- */
-
-
-
-
 
 function StatCard({
   title,
@@ -176,9 +138,9 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className={`bg-gradient-to-br ${color} p-6 rounded-2xl`}>
-      <p className="text-sm">{title}</p>
-      <h2 className="text-2xl font-bold mt-2">{value}</h2>
-    </div>
+    <Card className="p-6">
+      <p className="text-sm text-muted-foreground">{title}</p>
+      <p className={`font-numeric text-2xl font-semibold mt-2 ${color}`}>{value}</p>
+    </Card>
   );
 }

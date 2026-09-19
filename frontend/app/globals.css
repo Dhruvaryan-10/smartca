@@ -1,5 +1,218 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ */
+/* SmartCA design tokens                                               */
+/*                                                                     */
+/* Four surfaces, used sparingly:                                      */
+/*   background  the page                                              */
+/*   card        a grouped region that earns its own surface           */
+/*   elevated    floating layers only (menus, tooltips, drawers)       */
+/*   inset       controls and recessed wells (inputs, chips, hover)    */
+/* Hierarchy comes from type and spacing first; borders are hairlines  */
+/* used only where they separate something real.                       */
+/*                                                                     */
+/* Colour rules: neutrals carry almost everything. `primary` is the    */
+/* SmartCA accent — primary actions, active navigation, selection and  */
+/* focus only. success/destructive/warning/info encode meaning, never  */
+/* decoration. Contrast of every text pairing below is >= 4.5:1.       */
+/*                                                                     */
+/* Manual override via <html data-theme="light|dark">, falling back to */
+/* the OS preference when no override is set.                          */
+/* ------------------------------------------------------------------ */
+:root {
+  --background: #f4f3ef;
+  --foreground: #1c1b19;
+  --muted-foreground: #66625b;
+  --card: #fcfbf9;
+  --card-foreground: #1c1b19;
+  --elevated: #ffffff;
+  --elevated-foreground: #1c1b19;
+  --inset: #ecebe6;
+  --border: #e3e1db;
+  --field-border: #8c8880;
+  --primary: #0b6470;
+  --primary-foreground: #f5fbfb;
+  --secondary: #ecebe6;
+  --secondary-foreground: #1c1b19;
+  --destructive: #b42318;
+  --destructive-foreground: #ffffff;
+  --success: #26703a;
+  --warning: #8a5700;
+  --info: #2b5f9e;
+  --ring: #0b6470;
+
+  --radius-sm: 0.5rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.75rem;
+
+  --shadow-sm: none;
+  --shadow-md: 0 8px 24px rgba(28, 27, 25, 0.1), 0 0 0 1px rgba(28, 27, 25, 0.04);
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root[data-theme="dark"] {
+  --background: #0e0e0d;
+  --foreground: #ecebe7;
+  --muted-foreground: #9a968e;
+  --card: #161615;
+  --card-foreground: #ecebe7;
+  --elevated: #1e1e1c;
+  --elevated-foreground: #ecebe7;
+  --inset: #242422;
+  --border: #2a2a27;
+  --field-border: #77736b;
+  --primary: #63bdb8;
+  --primary-foreground: #06201f;
+  --secondary: #242422;
+  --secondary-foreground: #ecebe7;
+  --destructive: #ef7167;
+  --destructive-foreground: #2a0b08;
+  --success: #5fbf7a;
+  --warning: #dba845;
+  --info: #7fa9e3;
+  --ring: #63bdb8;
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --background: #0e0e0d;
+    --foreground: #ecebe7;
+    --muted-foreground: #9a968e;
+    --card: #161615;
+    --card-foreground: #ecebe7;
+    --elevated: #1e1e1c;
+    --elevated-foreground: #ecebe7;
+    --inset: #242422;
+    --border: #2a2a27;
+    --field-border: #77736b;
+    --primary: #63bdb8;
+    --primary-foreground: #06201f;
+    --secondary: #242422;
+    --secondary-foreground: #ecebe7;
+    --destructive: #ef7167;
+    --destructive-foreground: #2a0b08;
+    --success: #5fbf7a;
+    --warning: #dba845;
+    --info: #7fa9e3;
+    --ring: #63bdb8;
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-elevated: var(--elevated);
+  --color-elevated-foreground: var(--elevated-foreground);
+  --color-inset: var(--inset);
+  --color-border: var(--border);
+  --color-field-border: var(--field-border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-ring: var(--ring);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --font-sans: var(--font-geist), -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+/* Financial figures: tabular so digits align in stacked/scanned lists. */
+.font-numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* Motion. Short, purposeful, and never the only carrier of meaning.   */
+/* Everything here is disabled under prefers-reduced-motion.           */
+/* ------------------------------------------------------------------ */
+
+/* Page content settles in on navigation: a few pixels and a fade, so
+   the eye knows the view changed without anything travelling far. */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-enter {
+  animation: page-in 220ms var(--ease-standard) both;
+}
+
+/* Loading placeholders: a slow breathing pulse, not a shimmer sweep. */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.skeleton {
+  background: var(--inset);
+  border-radius: var(--radius-sm);
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+
+/* Proportion bars grow from their left edge once, on first paint. */
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+.bar-grow {
+  transform-origin: left center;
+  animation: bar-grow 480ms var(--ease-standard) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .skeleton,
+  .bar-grow {
+    animation: none;
+  }
+}
+
+/* Mobile navigation drawer: a short, purposeful slide/fade — never the
+   only way to understand what happened (the drawer's content and the
+   overlay both still work instantly without it). */
+@keyframes shell-drawer-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+@keyframes shell-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.shell-drawer-enter {
+  animation: shell-drawer-in 200ms var(--ease-standard);
+}
+.shell-overlay-enter {
+  animation: shell-overlay-in 200ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell-drawer-enter,
+  .shell-overlay-enter {
+    animation: none;
+  }
+}
+
 @keyframes blob {
   0% { transform: translate(0px, 0px) scale(1); }
   33% { transform: translate(30px, -50px) scale(1.1); }

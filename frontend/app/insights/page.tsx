@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Navbar from "../components/Navbar";
-import Sidebar from "../components/Sidebar";
+import AppShell from "../components/AppShell";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Card } from "../components/ui/Card";
+import { LoadingState } from "../components/ui/States";
 
 // Shape returned by GET /api/transactions (services/transactions.ts —
 // Postgres/Drizzle rows, not the old Mongo shape). Money is integer
@@ -34,52 +36,22 @@ export default function InsightsPage() {
 
   const insights = generateInsights(income, expense);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#020617] text-white">
-        Generating AI Insights...
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-[#020617] text-white">
+    <AppShell>
+      <PageHeader title="Ask" description="Rule-based suggestions based on your spending patterns." />
 
-      <Navbar />
-
-      <div className="flex">
-
-        <Sidebar />
-
-        <main className="flex-1 p-10 space-y-8">
-
-          {/* HEADER */}
-          <div>
-            <h2 className="text-3xl font-bold">
-              AI Financial Insights 🧠
-            </h2>
-            <p className="text-slate-400">
-              Smart suggestions based on your spending
-            </p>
-          </div>
-
-          {/* INSIGHTS */}
-          <div className="grid grid-cols-2 gap-6">
-
-            {insights.length === 0 ? (
-              <InsightCard text="💡 Add transactions to unlock AI insights." />
-            ) : (
-              insights.map((insight, index) => (
-                <InsightCard key={index} text={insight} />
-              ))
-            )}
-
-          </div>
-
-        </main>
-
-      </div>
-    </div>
+      {loading ? (
+        <LoadingState label="Generating insights…" />
+      ) : (
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {insights.length === 0 ? (
+            <InsightCard text="Add transactions to unlock insights." />
+          ) : (
+            insights.map((insight, index) => <InsightCard key={index} text={insight} />)
+          )}
+        </div>
+      )}
+    </AppShell>
   );
 }
 
@@ -179,8 +151,8 @@ function generateInsights(
 
 function InsightCard({ text }: { text: string }) {
   return (
-    <div className="bg-white/5 border border-white/10 p-6 rounded-2xl hover:scale-[1.02] transition">
-      <p className="text-lg">{text}</p>
-    </div>
+    <Card className="p-6">
+      <p className="text-sm text-foreground">{text}</p>
+    </Card>
   );
 }

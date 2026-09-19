@@ -1,141 +1,120 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { signIn } from "next-auth/react";
-import { motion } from "framer-motion";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import FinanceAIModel from "../components/FinanceAIModel";
+import { AuthLayout, AuthLink } from "../components/ui/AuthLayout";
+import { Button } from "../components/ui/Button";
+import { TextField } from "../components/ui/TextField";
+import { validateCurrentPassword, validateEmail } from "@/lib/auth-validation";
 
 export default function Login() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // A field's message appears once it has been left (or the form was
+  // submitted) — never while someone is still typing their first attempt —
+  // and then updates live as they correct it.
+  const [touched, setTouched] = useState({ email: false, password: false });
+  const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  const emailError = validateEmail(email);
+  const passwordError = validateCurrentPassword(password);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
 
-    if (!email || !password) {
-      setError("Enter your email and password.");
+    setTouched({ email: true, password: true });
+    setFormError(null);
+
+    if (emailError || passwordError) {
+      (emailError ? emailRef : passwordRef).current?.focus();
       return;
     }
 
-    setError(null);
     setLoading(true);
+    try {
+      // redirect: false — we handle the redirect ourselves so we can show
+      // a real error message instead of a lossy query-string redirect.
+      const result = await signIn("credentials", {
+        email: email.trim(),
+        password,
+        redirect: false,
+      });
 
-    // redirect: false — we handle the redirect ourselves so we can show
-    // a real error message instead of a lossy query-string redirect.
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
+      if (!result || result.error) {
+        // Deliberately generic: never reveal whether the email exists.
+        setFormError("That email and password don’t match. Check them and try again.");
+        passwordRef.current?.focus();
+        passwordRef.current?.select();
+        return;
+      }
 
-    setLoading(false);
-
-    if (!result || result.error) {
-      // Deliberately generic: never reveal whether the email exists.
-      setError("Invalid email or password.");
-      return;
+      router.push("/dashboard");
+    } catch {
+      setFormError("Couldn’t reach SmartCA. Check your connection and try again.");
+    } finally {
+      setLoading(false);
     }
-
-    router.push("/dashboard");
   };
 
   return (
-    <main className="relative min-h-screen flex items-center justify-center overflow-hidden bg-[#020617] text-white">
+    <AuthLayout
+      title="Log in"
+      subtitle="Pick up where you left off."
+      footer={
+        <p>
+          New to SmartCA? <AuthLink href="/signup">Create an account</AuthLink>
+        </p>
+      }
+    >
+      <form onSubmit={handleSubmit} noValidate className="space-y-5">
+        <TextField
+          ref={emailRef}
+          id="login-email"
+          label="Email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+          error={touched.email ? emailError : null}
+          autoComplete="email"
+          autoCapitalize="none"
+          autoFocus
+          inputMode="email"
+          spellCheck={false}
+          required
+        />
 
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="blob blob1" />
-        <div className="blob blob2" />
-        <div className="blob blob3" />
-      </div>
+        <TextField
+          ref={passwordRef}
+          id="login-password"
+          label="Password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onBlur={() => setTouched((t) => ({ ...t, password: true }))}
+          error={touched.password ? passwordError : null}
+          autoComplete="current-password"
+          required
+        />
 
-      <div className="max-w-6xl w-full grid lg:grid-cols-2 gap-16 items-center px-8">
+        {formError && (
+          <p role="alert" className="text-sm text-destructive">
+            {formError}
+          </p>
+        )}
 
-        {/* LEFT MODEL */}
-
-        <motion.div
-          initial={{ opacity: 0, x: -40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.8 }}
-          className="hidden lg:flex justify-center items-center"
-        >
-          <div className="w-[380px] h-[380px]">
-            <FinanceAIModel />
-          </div>
-        </motion.div>
-
-        {/* LOGIN CARD */}
-
-        <motion.div
-          initial={{ opacity: 0, x: 40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.8 }}
-          className="w-full max-w-md mx-auto"
-        >
-
-          <div className="p-10 rounded-3xl bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.6)]">
-
-            <h1 className="text-center text-xl text-teal-300 font-semibold mb-2">
-              SmartCA
-            </h1>
-
-            <h2 className="text-center text-3xl font-bold mb-8">
-              Login
-            </h2>
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email"
-                autoComplete="email"
-                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400"
-              />
-
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password"
-                autoComplete="current-password"
-                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400"
-              />
-
-              {error && (
-                <p className="text-sm text-rose-400" role="alert">
-                  {error}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 rounded-xl bg-teal-400 text-black font-semibold"
-              >
-                {loading ? "Logging in..." : "Login"}
-              </button>
-
-            </form>
-
-            <p className="mt-6 text-center text-slate-400 text-sm">
-              Don&rsquo;t have an account?{" "}
-              <Link href="/signup" className="text-teal-300 hover:underline">
-                Sign up
-              </Link>
-            </p>
-          </div>
-
-        </motion.div>
-
-      </div>
-
-    </main>
+        <Button type="submit" size="lg" disabled={loading} className="w-full">
+          {loading ? "Logging in…" : "Log in"}
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }

@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
-import Navbar from "../components/Navbar";
-import Sidebar from "../components/Sidebar";
+import AppShell from "../components/AppShell";
+import LedgerTabs from "../components/LedgerTabs";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
+import { Button } from "../components/ui/Button";
+import { Input, Select, Label } from "../components/ui/Input";
 
 // Shape returned by GET /api/transactions (services/transactions.ts —
 // Postgres/Drizzle rows, not the old Mongo shape). Money is integer
@@ -87,129 +90,99 @@ export default function ExpensesPage() {
     transactions.reduce((sum, t) => sum + t.amountPaise, 0) / 100;
 
   return (
-    <div className="flex min-h-screen bg-[#020617] text-white">
+    <AppShell>
+      <PageHeader title="Ledger" description="Track income, expenses and view reports." />
+      <LedgerTabs />
 
-      {/* SIDEBAR */}
-      <Sidebar />
-
-      <div className="flex-1">
-
-        {/* NAVBAR */}
-        <Navbar />
-
-        <main className="p-6 flex gap-6">
-
-          {/* LEFT FORM */}
-          <div className="flex-1 bg-white/5 border border-white/10 p-6 rounded-2xl">
-
-            <h2 className="text-xl font-semibold mb-6">
-              Add New Expense
-            </h2>
-
-            {/* TITLE */}
-            <div className="mb-4">
-              <label className="text-sm text-slate-400">Title</label>
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="House Rent"
-                className="w-full mt-1 p-2 rounded bg-black/50 border border-white/10"
-              />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* LEFT FORM */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Add New Expense</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="expense-title">Title</Label>
+              <Input id="expense-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="House Rent" />
             </div>
 
-            {/* AMOUNT */}
-            <div className="mb-4">
-              <label className="text-sm text-slate-400">Amount</label>
-              <input
+            <div>
+              <Label htmlFor="expense-amount">Amount</Label>
+              <Input
+                id="expense-amount"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="₹5000"
-                className="w-full mt-1 p-2 rounded bg-black/50 border border-white/10"
+                inputMode="decimal"
               />
             </div>
 
-            {/* CATEGORY */}
-            <div className="mb-4">
-              <label className="text-sm text-slate-400">Category</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full mt-1 p-2 rounded bg-black/50 border border-white/10"
-              >
+            <div>
+              <Label htmlFor="expense-category">Category</Label>
+              <Select id="expense-category" value={category} onChange={(e) => setCategory(e.target.value)}>
                 <option>Rent</option>
                 <option>Food</option>
                 <option>Transport</option>
                 <option>Shopping</option>
-              </select>
+              </Select>
             </div>
 
-            {/* DESCRIPTION */}
-            <div className="mb-6">
-              <label className="text-sm text-slate-400">Description</label>
-              <input
+            <div>
+              <Label htmlFor="expense-description">Description</Label>
+              <Input
+                id="expense-description"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Monthly Rent"
-                className="w-full mt-1 p-2 rounded bg-black/50 border border-white/10"
               />
             </div>
 
-            <button
-              onClick={handleAddExpense}
-              className="bg-rose-500 px-4 py-2 rounded-lg"
-            >
+            <Button variant="destructive" onClick={handleAddExpense}>
               + Add Expense
-            </button>
-          </div>
+            </Button>
+          </CardContent>
+        </Card>
 
-          {/* RIGHT PANEL */}
-          <div className="w-80 space-y-6">
+        {/* RIGHT PANEL */}
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Expense Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div>
+                <p className="text-sm text-muted-foreground">Monthly</p>
+                <p className="font-numeric text-xl font-semibold text-destructive">₹{totalExpense}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Yearly</p>
+                <p className="font-numeric text-xl font-semibold text-destructive">₹{totalExpense * 12}</p>
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* SUMMARY */}
-            <div className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-              <h3 className="mb-4">Expense Summary</h3>
-
-              <p className="text-slate-400 text-sm">Monthly</p>
-              <p className="text-rose-400 text-xl">
-                ₹{totalExpense}
-              </p>
-
-              <p className="text-slate-400 text-sm mt-4">Yearly</p>
-              <p className="text-rose-400 text-xl">
-                ₹{totalExpense * 12}
-              </p>
-            </div>
-
-            {/* RECENT */}
-            <div className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-              <h3 className="mb-4">Recent Expenses</h3>
-
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Expenses</CardTitle>
+            </CardHeader>
+            <CardContent>
               {transactions.length === 0 ? (
-                <p className="text-slate-400">
-                  No expenses yet
-                </p>
+                <p className="text-sm text-muted-foreground">No expenses yet</p>
               ) : (
-                transactions.slice(0, 5).map((t) => (
-                  <div
-                    key={t.id}
-                    className="flex justify-between border-b border-white/10 py-2"
-                  >
-                    <span>{t.category}</span>
-                    <span className="text-rose-400">
-                      ₹{t.amountPaise / 100}
-                    </span>
-                  </div>
-                ))
+                <ul>
+                  {transactions.slice(0, 5).map((t) => (
+                    <li key={t.id} className="flex justify-between border-b border-border py-2 text-sm last:border-0">
+                      <span>{t.category}</span>
+                      <span className="font-numeric text-destructive">₹{t.amountPaise / 100}</span>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </div>
-
-          </div>
-
-        </main>
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </div>
+    </AppShell>
   );
 }
-
-/* ---------------- UI ---------------- */
 

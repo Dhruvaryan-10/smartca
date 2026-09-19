@@ -1,11 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { signIn } from "next-auth/react";
-import { motion } from "framer-motion";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import FinanceAIModel from "../components/FinanceAIModel";
+import { AuthLayout, AuthLink } from "../components/ui/AuthLayout";
+import { Button } from "../components/ui/Button";
+import { TextField } from "../components/ui/TextField";
+import {
+  MIN_PASSWORD_LENGTH,
+  validateEmail,
+  validateName,
+  validateNewPassword,
+} from "@/lib/auth-validation";
 
 export default function Signup() {
   const router = useRouter();
@@ -13,161 +19,138 @@ export default function Signup() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [touched, setTouched] = useState({ name: false, email: false, password: false });
+  // Set when the server rejects the address (already registered); cleared
+  // as soon as the address is edited, so it never lingers on a new value.
+  const [serverEmailError, setServerEmailError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  const nameRef = useRef<HTMLInputElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  const nameError = validateName(name);
+  const emailError = validateEmail(email);
+  const passwordError = validateNewPassword(password);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
 
-    if (!name || !email || !password) {
-      setError("Enter your name, email, and password.");
+    setTouched({ name: true, email: true, password: true });
+    setFormError(null);
+
+    if (nameError || emailError || passwordError) {
+      (nameError ? nameRef : emailError ? emailRef : passwordRef).current?.focus();
       return;
     }
 
-    setError(null);
     setLoading(true);
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: name.trim(), email: email.trim(), password }),
+      });
 
-    const res = await fetch("/api/auth/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
-    });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        const message: string = data.error || "Sign-up didn’t go through. Please try again.";
+        if (res.status === 409) {
+          setServerEmailError(message);
+          emailRef.current?.focus();
+        } else {
+          setFormError(message);
+        }
+        return;
+      }
 
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Signup failed. Please try again.");
+      // Signed up — now sign in with the same credentials.
+      const result = await signIn("credentials", { email: email.trim(), password, redirect: false });
+
+      if (!result || result.error) {
+        // Account was created but sign-in somehow failed — send them to
+        // login rather than leaving them stuck on this form.
+        router.push("/login");
+        return;
+      }
+
+      router.push("/dashboard");
+    } catch {
+      setFormError("Couldn’t reach SmartCA. Check your connection and try again.");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // Signed up — now sign in with the same credentials.
-    const result = await signIn("credentials", { email, password, redirect: false });
-
-    setLoading(false);
-
-    if (!result || result.error) {
-      // Account was created but sign-in somehow failed — send them to
-      // login rather than leaving them stuck on this form.
-      router.push("/login");
-      return;
-    }
-
-    router.push("/dashboard");
   };
 
   return (
-    <main className="relative min-h-screen flex items-center justify-center overflow-hidden bg-[#020617] text-white">
+    <AuthLayout
+      title="Create your account"
+      subtitle="Keep your income, expenses and tax in one place."
+      footer={
+        <p>
+          Already have an account? <AuthLink href="/login">Log in</AuthLink>
+        </p>
+      }
+    >
+      <form onSubmit={handleSubmit} noValidate className="space-y-5">
+        <TextField
+          ref={nameRef}
+          id="signup-name"
+          label="Full name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => setTouched((t) => ({ ...t, name: true }))}
+          error={touched.name ? nameError : null}
+          autoComplete="name"
+          autoFocus
+          required
+        />
 
-      {/* BACKGROUND BLOBS */}
+        <TextField
+          ref={emailRef}
+          id="signup-email"
+          label="Email"
+          type="email"
+          value={email}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            setServerEmailError(null);
+          }}
+          onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+          error={serverEmailError ?? (touched.email ? emailError : null)}
+          autoComplete="email"
+          autoCapitalize="none"
+          inputMode="email"
+          spellCheck={false}
+          required
+        />
 
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="blob blob1" />
-        <div className="blob blob2" />
-        <div className="blob blob3" />
-      </div>
+        <TextField
+          ref={passwordRef}
+          id="signup-password"
+          label="Password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onBlur={() => setTouched((t) => ({ ...t, password: true }))}
+          error={touched.password ? passwordError : null}
+          hint={`At least ${MIN_PASSWORD_LENGTH} characters.`}
+          autoComplete="new-password"
+          required
+        />
 
-      {/* PAGE GRID */}
+        {formError && (
+          <p role="alert" className="text-sm text-destructive">
+            {formError}
+          </p>
+        )}
 
-      <div className="max-w-6xl w-full grid lg:grid-cols-2 gap-16 items-center px-8">
-
-        {/* LEFT AI MODEL */}
-
-        <motion.div
-          initial={{ opacity: 0, x: -40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.8 }}
-          className="hidden lg:flex justify-center items-center"
-        >
-
-          <div className="relative w-[380px] h-[380px]">
-
-            <div className="absolute inset-0 blur-3xl bg-teal-500 opacity-20 rounded-full" />
-
-            <FinanceAIModel />
-
-          </div>
-
-        </motion.div>
-
-        {/* SIGNUP CARD */}
-
-        <motion.div
-          initial={{ opacity: 0, x: 40 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.8 }}
-          className="w-full max-w-md mx-auto"
-        >
-
-          <div className="p-10 rounded-3xl bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.6)]">
-
-            <h1 className="text-center text-xl text-teal-300 font-semibold mb-2">
-              SmartCA
-            </h1>
-
-            <h2 className="text-center text-3xl font-bold mb-8">
-              Create Account
-            </h2>
-
-            <form onSubmit={handleSubmit} className="space-y-6">
-
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Full Name"
-                autoComplete="name"
-                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder-slate-400"
-              />
-
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email"
-                autoComplete="email"
-                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder-slate-400"
-              />
-
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password (min. 8 characters)"
-                autoComplete="new-password"
-                className="w-full px-4 py-3 rounded-xl bg-black/40 border border-white/10 focus:outline-none focus:ring-2 focus:ring-teal-400 placeholder-slate-400"
-              />
-
-              {error && (
-                <p className="text-sm text-rose-400" role="alert">
-                  {error}
-                </p>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 rounded-xl bg-teal-400 text-black font-semibold hover:scale-[1.03] transition"
-              >
-                {loading ? "Creating account..." : "Create Account"}
-              </button>
-
-            </form>
-
-            <p className="mt-6 text-center text-slate-400 text-sm">
-              Already have an account?{" "}
-              <Link
-                href="/login"
-                className="text-teal-300 hover:underline"
-              >
-                Login
-              </Link>
-            </p>
-          </div>
-
-        </motion.div>
-
-      </div>
-
-    </main>
+        <Button type="submit" size="lg" disabled={loading} className="w-full">
+          {loading ? "Creating account…" : "Create account"}
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }

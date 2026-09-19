@@ -1,66 +1,43 @@
 "use client";
 
-import { signOut } from "next-auth/react";
+import type { RefObject } from "react";
+import ThemeToggle from "./ThemeToggle";
+import UserMenu from "./UserMenu";
+import { IconMenu } from "./ui/Icons";
 
-export default function Navbar() {
-
-  const logout = () => {
-    signOut({ callbackUrl: "/login" });
-  };
-
+export default function Navbar({
+  onMenuClick,
+  menuButtonRef,
+}: {
+  onMenuClick?: () => void;
+  menuButtonRef?: RefObject<HTMLButtonElement | null>;
+}) {
   return (
-    <div className="flex items-center justify-between bg-black/40 backdrop-blur-xl border-b border-white/10 px-8 py-4">
-
-      {/* LEFT */}
-      <div className="flex items-center gap-6">
-
-        <h1 className="text-xl font-bold text-teal-400">
-          SmartCA
-        </h1>
-
-        <input
-          type="text"
-          placeholder="Search..."
-          className="bg-black/40 border border-white/10 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-400"
-        />
-
-      </div>
-
-      {/* RIGHT */}
-
-      <div className="flex items-center gap-6">
-
-        {/* Notification */}
-
-        <div className="cursor-pointer text-slate-300 hover:text-teal-400">
-          🔔
-        </div>
-
-        {/* Profile */}
-
-        <div className="flex items-center gap-2 text-slate-300">
-
-          <div className="w-8 h-8 rounded-full bg-teal-400 flex items-center justify-center text-black font-bold">
-            U
-          </div>
-
-          <span className="text-sm">
-            User
-          </span>
-
-        </div>
-
-        {/* Logout */}
-
+    <header className="flex h-14 items-center justify-between gap-4 border-b border-border px-4 sm:px-8">
+      <div className="flex items-center gap-3">
         <button
-          onClick={logout}
-          className="bg-teal-400 text-black px-4 py-2 rounded-lg font-semibold hover:scale-105 transition"
+          ref={menuButtonRef}
+          type="button"
+          onClick={onMenuClick}
+          aria-label="Open navigation menu"
+          className="-ml-1.5 inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-sm)] text-foreground transition-colors hover:bg-inset focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
         >
-          Logout
+          <IconMenu />
         </button>
 
+        {/* Only AY 2026-27 is supported today, so this is plain context,
+            not a selector — a disabled dropdown reads as a broken control. */}
+        <p className="text-[13px] text-muted-foreground">
+          <span className="sr-only">Assessment year </span>
+          <span aria-hidden="true">AY </span>
+          <span className="font-medium text-foreground">2026-27</span>
+        </p>
       </div>
 
-    </div>
+      <div className="flex items-center gap-1">
+        <ThemeToggle />
+        <UserMenu />
+      </div>
+    </header>
   );
 }

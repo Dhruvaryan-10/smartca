@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Navbar from "../components/Navbar";
-import Sidebar from "../components/Sidebar";
+import AppShell from "../components/AppShell";
+import LedgerTabs from "../components/LedgerTabs";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/Card";
 import {
   LineChart,
   Line,
@@ -14,7 +16,6 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import Link from "next/link";
 
 // Shape returned by GET /api/transactions (services/transactions.ts —
 // Postgres/Drizzle rows, not the old Mongo shape). Money is integer
@@ -84,91 +85,59 @@ export default function ReportsPage() {
   }));
 
   return (
-    <div className="flex min-h-screen bg-[#020617] text-white">
+    <AppShell>
+      <PageHeader title="Ledger" description="Analyze your financial performance." />
+      <LedgerTabs />
 
-      {/* SIDEBAR */}
-      <Sidebar />
-
-      <div className="flex-1">
-
-        {/* NAVBAR */}
-        <Navbar />
-
-        <main className="p-6 space-y-6">
-
-          {/* HEADER */}
-          <div>
-            <h1 className="text-2xl font-bold">
-              Financial Reports
-            </h1>
-            <p className="text-slate-400">
-              Analyze your financial performance
-            </p>
-          </div>
-
-          {/* STATS */}
-          <div className="grid grid-cols-4 gap-6">
-
-            <StatCard title="Total Income" value={`₹${totalIncome}`} color="text-green-400" />
-
-            <StatCard title="Total Expense" value={`₹${totalExpense}`} color="text-rose-400" />
-
-            <StatCard title="Savings" value={`₹${savings}`} color="text-blue-400" />
-
-            <StatCard title="Savings Rate" value={`${savingsRate}%`} color="text-teal-400" />
-
-          </div>
-
-          {/* MONTHLY TREND */}
-          <div className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-
-            <h3 className="text-teal-400 mb-4">
-              Monthly Trends
-            </h3>
-
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={monthlyData}>
-                <XAxis dataKey="name" stroke="#ccc" />
-                <YAxis stroke="#ccc" />
-                <Tooltip />
-                <Line dataKey="income" stroke="#14b8a6" />
-                <Line dataKey="expense" stroke="#ec4899" />
-              </LineChart>
-            </ResponsiveContainer>
-
-          </div>
-
-          {/* EXPENSE BREAKDOWN */}
-          <div className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-
-            <h3 className="text-teal-400 mb-4">
-              Expense Breakdown
-            </h3>
-
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie data={categoryData} dataKey="value" nameKey="name">
-                  {categoryData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-
-          </div>
-
-        </main>
+      {/* STATS */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatCard title="Total Income" value={`₹${totalIncome}`} color="text-success" />
+        <StatCard title="Total Expense" value={`₹${totalExpense}`} color="text-destructive" />
+        <StatCard title="Savings" value={`₹${savings}`} color="text-foreground" />
+        <StatCard title="Savings Rate" value={`${savingsRate}%`} color="text-primary" />
       </div>
-    </div>
+
+      {/* MONTHLY TREND */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Monthly Trends</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={monthlyData}>
+              <XAxis dataKey="name" stroke="var(--muted-foreground)" fontSize={12} />
+              <YAxis stroke="var(--muted-foreground)" fontSize={12} />
+              <Tooltip />
+              <Line dataKey="income" stroke="var(--success)" strokeWidth={2} dot={false} />
+              <Line dataKey="expense" stroke="var(--destructive)" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      {/* EXPENSE BREAKDOWN */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Expense Breakdown</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={280}>
+            <PieChart>
+              <Pie data={categoryData} dataKey="value" nameKey="name">
+                {categoryData.map((_, i) => (
+                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+    </AppShell>
   );
 }
 
 /* ---------------- COMPONENTS ---------------- */
-
-
-
-
 
 function StatCard({
   title,
@@ -180,12 +149,10 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="bg-white/5 border border-white/10 p-4 rounded-xl">
-      <p className="text-sm text-slate-400">{title}</p>
-      <h2 className={`text-2xl font-bold ${color}`}>
-        {value}
-      </h2>
-    </div>
+    <Card className="p-4">
+      <p className="text-sm text-muted-foreground">{title}</p>
+      <p className={`font-numeric text-2xl font-semibold ${color}`}>{value}</p>
+    </Card>
   );
 }
 

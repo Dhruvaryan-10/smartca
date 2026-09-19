@@ -1,226 +1,269 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import Navbar from "../components/Navbar";
-import Sidebar from "../components/Sidebar";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
+import AppShell from "../components/AppShell";
+import { PageHeader, Section } from "../components/ui/PageHeader";
+import { buttonClasses } from "../components/ui/Button";
+import { EmptyState, ErrorState, Skeleton } from "../components/ui/States";
+import { formatDate, formatRupees } from "@/lib/format";
+import { summarize, type Summary, type SummaryTransaction } from "@/lib/summary";
+import MonthlyChart from "./MonthlyChart";
 
-const COLORS = ["#14b8a6", "#6366f1", "#ec4899", "#f59e0b", "#ef4444"];
-
-// Shape returned by GET /api/transactions (services/transactions.ts —
-// Postgres/Drizzle rows, not the old Mongo shape). Money is integer
-// paise on the wire, per the schema's money convention; convert to
-// rupees only for display/calculation, here at the UI boundary.
-type Transaction = {
-  id: string;
-  type: "income" | "expense";
-  amountPaise: number;
-  category: string;
-  description: string | null;
-  occurredOn: string;
-};
-
-const paiseToRupees = (paise: number) => paise / 100;
+// Shape returned by GET /api/transactions (services/transactions.ts).
+// Money is integer paise on the wire and stays paise until it is rendered
+// through formatRupees — nothing on this page converts to floating-point
+// rupees.
+type LoadState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; transactions: SummaryTransaction[] };
 
 export default function Dashboard() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    fetch("/api/transactions")
-      .then((res) => res.json())
-      .then((data) => setTransactions(Array.isArray(data) ? data : []))
-      .catch((err) => console.error(err));
-  }, []);
+    const controller = new AbortController();
 
-  // 🔹 Calculations — sum in integer paise first (never accumulate
-  // rounding error across many rupee-converted additions), convert to
-  // rupees once at the end for display. reduce() over an empty array
-  // returns 0, not NaN, once amountPaise is a real number on every row.
-  const totalIncomePaise = transactions
-    .filter((t) => t.type === "income")
-    .reduce((acc, t) => acc + t.amountPaise, 0);
+    fetch("/api/transactions", { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Request failed with ${res.status}`);
+        const data: unknown = await res.json();
+        if (!Array.isArray(data)) throw new Error("Unexpected response shape");
+        setState({ status: "ready", transactions: data as SummaryTransaction[] });
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        console.warn("Summary: could not load transactions", err);
+        setState({ status: "error" });
+      });
 
-  const totalExpensesPaise = transactions
-    .filter((t) => t.type === "expense")
-    .reduce((acc, t) => acc + t.amountPaise, 0);
+    return () => controller.abort();
+  }, [attempt]);
 
-  const totalIncome = paiseToRupees(totalIncomePaise);
-  const totalExpenses = paiseToRupees(totalExpensesPaise);
-  const savings = totalIncome - totalExpenses;
+  const retry = () => {
+    setState({ status: "loading" });
+    setAttempt((n) => n + 1);
+  };
 
-  // 🔹 Monthly Data
-  const monthlyData = generateMonthlyData(transactions);
-
-  // 🔹 Pie Data
-  const categoryMapPaise: Record<string, number> = {};
-  transactions
-    .filter((t) => t.type === "expense")
-    .forEach((t) => {
-      categoryMapPaise[t.category] =
-        (categoryMapPaise[t.category] || 0) + t.amountPaise;
-    });
-
-  const categoryData = Object.keys(categoryMapPaise).map((key) => ({
-    name: key,
-    value: paiseToRupees(categoryMapPaise[key]),
-  }));
-
-  const recentExpenses = transactions
-    .filter((t) => t.type === "expense")
-    .slice(0, 5);
+  const summary = useMemo(
+    () => (state.status === "ready" ? summarize(state.transactions) : null),
+    [state],
+  );
 
   return (
-    <div className="flex min-h-screen bg-[#020617] text-white">
+    <AppShell>
+      <PageHeader title="Summary" description={summary ? describeRange(summary) : "Your income, expenses and savings."} />
 
-      {/* SIDEBAR */}
-      <Sidebar />
+      {state.status === "loading" && <SummarySkeleton />}
 
-      <div className="flex-1">
+      {state.status === "error" && (
+        <ErrorState
+          title="Couldn’t load your summary"
+          message="Your transactions didn’t load. Check your connection and try again."
+          onRetry={retry}
+        />
+      )}
 
-        <Navbar/>
+      {summary && summary.transactionCount === 0 && (
+        <EmptyState
+          title="Nothing to summarise yet"
+          description="Your summary is built from the income and expenses you record. Add your first entry to see totals, monthly trends and where your money goes."
+          action={
+            <>
+              <Link href="/income" className={buttonClasses("primary", "md")}>
+                Add income
+              </Link>
+              <Link href="/expenses" className={buttonClasses("secondary", "md")}>
+                Add an expense
+              </Link>
+            </>
+          }
+        />
+      )}
 
-        <main className="p-6 space-y-6">
+      {summary && summary.transactionCount > 0 && <SummaryBody summary={summary} />}
+    </AppShell>
+  );
+}
 
-          
+function describeRange(summary: Summary): string {
+  const noun = summary.transactionCount === 1 ? "transaction" : "transactions";
+  if (!summary.range) return "Your income, expenses and savings.";
+  const { from, to } = summary.range;
+  const span = from === to ? formatDate(from) : `${formatDate(from)} – ${formatDate(to)}`;
+  return `${span} · ${summary.transactionCount} ${noun}`;
+}
 
-          {/* CARDS */}
-          <div className="grid grid-cols-3 gap-6">
-            <StatCard title="Total Income" value={`₹${totalIncome}`} color="from-green-500 to-emerald-600" />
-            <StatCard title="Total Expenses" value={`₹${totalExpenses}`} color="from-pink-500 to-rose-600" />
-            <StatCard title="Savings" value={`₹${savings}`} color="from-blue-500 to-indigo-600" />
-          </div>
+function SummaryBody({ summary }: { summary: Summary }) {
+  return (
+    <div className="space-y-12">
+      <Headline summary={summary} />
 
-          {/* CHARTS */}
-          <div className="grid grid-cols-2 gap-6">
+      <Section
+        title="Income and expenses by month"
+        aside={summary.monthsTruncated ? "Most recent 12 months" : undefined}
+      >
+        {summary.months.length >= 2 ? (
+          <MonthlyChart months={summary.months} />
+        ) : (
+          <EmptyState
+            compact
+            title="Not enough history for a trend yet"
+            description="Month-by-month changes appear once you have activity in two or more months."
+          />
+        )}
+      </Section>
 
-            {/* LINE CHART */}
-            <div className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-              <h3 className="text-teal-400 mb-4">
-                Monthly Income vs Expense
-              </h3>
+      <div className="grid grid-cols-1 gap-x-14 gap-y-12 lg:grid-cols-2">
+        <Section title="Where your money goes">
+          {summary.categories.length > 0 ? (
+            <CategoryList categories={summary.categories} />
+          ) : (
+            <EmptyState
+              compact
+              title="No spending recorded"
+              description="Expenses you add will be grouped by category here."
+              action={
+                <Link href="/expenses" className={buttonClasses("secondary", "sm")}>
+                  Add an expense
+                </Link>
+              }
+            />
+          )}
+        </Section>
 
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={monthlyData}>
-                  <XAxis dataKey="name" stroke="#ccc" />
-                  <YAxis stroke="#ccc" />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="income" stroke="#14b8a6" />
-                  <Line type="monotone" dataKey="expense" stroke="#ec4899" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* PIE CHART */}
-            <div className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-              <h3 className="text-teal-400 mb-4">
-                Spending Categories
-              </h3>
-
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie data={categoryData} dataKey="value" nameKey="name">
-                    {categoryData.map((_, index) => (
-                      <Cell key={index} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-
-          </div>
-
-          {/* RECENT EXPENSES */}
-          <div className="bg-white/5 border border-white/10 p-6 rounded-2xl">
-            <h3 className="text-teal-400 mb-4">
-              Recent Expenses
-            </h3>
-
-            {recentExpenses.length === 0 ? (
-              <p className="text-slate-400">
-                No expenses added yet
-              </p>
-            ) : (
-              recentExpenses.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex justify-between border-b border-white/10 py-2"
-                >
-                  <span>{item.category}</span>
-                  <span className="text-rose-400">
-                    ₹{paiseToRupees(item.amountPaise)}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-
-        </main>
+        <Section
+          title="Recent activity"
+          aside={
+            <Link href="/income" className="transition-colors hover:text-foreground focus-visible:outline-none focus-visible:underline">
+              Open ledger
+            </Link>
+          }
+        >
+          <RecentActivity items={summary.recent} />
+        </Section>
       </div>
     </div>
   );
 }
 
+// The one figure the page is about, then the two that explain it. Size
+// and position do the ranking — no card, no tint, no per-figure colour.
+function Headline({ summary }: { summary: Summary }) {
+  const { savingsPaise, incomePaise, expensePaise, savingsRatePercent } = summary;
+  const overspent = savingsPaise < 0;
 
-
-
-
-function StatCard({
-  title,
-  value,
-  color,
-}: {
-  title: string;
-  value: string;
-  color: string;
-}) {
   return (
-    <div className={`bg-gradient-to-br ${color} p-6 rounded-2xl`}>
-      <p className="text-sm opacity-80">{title}</p>
-      <h3 className="text-3xl font-bold mt-2">{value}</h3>
+    <section aria-label="Totals">
+      <p className="text-[13px] font-medium text-muted-foreground">Savings</p>
+      <p
+        className={`mt-1 font-numeric text-[clamp(2.5rem,7vw,3.75rem)] font-semibold leading-none tracking-[-0.035em] ${
+          overspent ? "text-destructive" : "text-foreground"
+        }`}
+      >
+        {formatRupees(savingsPaise)}
+      </p>
+      <p className="mt-3 text-sm text-muted-foreground">{savingsCaption(savingsPaise, savingsRatePercent, incomePaise)}</p>
+
+      <dl className="mt-8 grid grid-cols-2 border-t border-border">
+        <Figure label="Income" paise={incomePaise} />
+        <Figure label="Expenses" paise={expensePaise} divided />
+      </dl>
+    </section>
+  );
+}
+
+function Figure({ label, paise, divided = false }: { label: string; paise: number; divided?: boolean }) {
+  return (
+    <div className={`pt-4 ${divided ? "border-l border-border pl-5 sm:pl-8" : "pr-5 sm:pr-8"}`}>
+      <dt className="text-[13px] text-muted-foreground">{label}</dt>
+      <dd className="mt-1 font-numeric text-[22px] font-semibold tracking-[-0.02em] text-foreground sm:text-2xl">
+        {formatRupees(paise)}
+      </dd>
     </div>
   );
 }
 
-function generateMonthlyData(transactions: Transaction[]) {
-  // All 12 months, not just Jan-Jun — the old 6-month list silently
-  // dropped any transaction dated July-December regardless of amount.
-  const months = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-  ];
-  // Bucket by numeric month index (0-11), not by a locale-formatted
-  // name string — toLocaleString("default",{month:"short"}) renders
-  // September as "Sept" (4 letters) in some ICU/locale data, which
-  // would never match a hardcoded "Sep" key and silently drop that
-  // month's totals. Indexing sidesteps that entirely (same fix as
-  // reports/page.tsx).
-  const paiseByMonthIndex: { income: number; expense: number }[] = months.map(
-    () => ({ income: 0, expense: 0 })
+function savingsCaption(savingsPaise: number, ratePercent: number | null, incomePaise: number): string {
+  if (incomePaise === 0) return "No income recorded yet, so there’s no savings rate to show.";
+  if (savingsPaise < 0) return `You’ve spent ${formatRupees(-savingsPaise)} more than you’ve earned.`;
+  if (savingsPaise === 0) return "Your expenses match your income.";
+  return `You’ve kept ${ratePercent}% of your income.`;
+}
+
+function CategoryList({ categories }: { categories: Summary["categories"] }) {
+  return (
+    <ul>
+      {categories.map((c) => (
+        <li key={c.category} className="border-b border-border py-3 first:pt-0 last:border-0">
+          <div className="flex items-baseline justify-between gap-4">
+            <span className="min-w-0 truncate text-sm text-foreground">{c.category}</span>
+            <span className="shrink-0 font-numeric text-sm text-foreground">
+              {formatRupees(c.totalPaise)}
+              <span className="ml-2 inline-block w-9 text-right text-[13px] text-muted-foreground">
+                {c.sharePercent === 0 ? "<1%" : `${c.sharePercent}%`}
+              </span>
+            </span>
+          </div>
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-inset" aria-hidden="true">
+            <div
+              className={`bar-grow h-full rounded-full ${c.isRemainder ? "bg-muted-foreground/50" : "bg-foreground/70"}`}
+              style={{ width: `${Math.max(c.sharePercent, 1)}%` }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
+}
 
-  transactions.forEach((t) => {
-    const monthIndex = new Date(t.occurredOn).getMonth();
-    if (monthIndex < 0 || monthIndex > 11) return;
+function RecentActivity({ items }: { items: SummaryTransaction[] }) {
+  return (
+    <ul>
+      {items.map((t) => {
+        const isIncome = t.type === "income";
+        const description = t.description?.trim() ?? "";
+        // A description that just repeats the category adds nothing — show the date alone.
+        const hasDistinctDescription = description !== "" && description.toLowerCase() !== t.category.toLowerCase();
+        const title = hasDistinctDescription ? description : t.category;
+        const detail = hasDistinctDescription ? `${t.category} · ${formatDate(t.occurredOn)}` : formatDate(t.occurredOn);
+        return (
+          <li key={t.id} className="flex items-baseline justify-between gap-4 border-b border-border py-3 first:pt-0 last:border-0">
+            <div className="min-w-0">
+              <p className="truncate text-sm text-foreground">{title}</p>
+              <p className="mt-0.5 truncate text-[13px] text-muted-foreground">{detail}</p>
+            </div>
+            {/* Sign carries direction; colour only confirms it for income. */}
+            <span className={`shrink-0 font-numeric text-sm ${isIncome ? "text-success" : "text-foreground"}`}>
+              {isIncome ? formatRupees(t.amountPaise, { showPositiveSign: true }) : formatRupees(-t.amountPaise)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
-    if (t.type === "income") paiseByMonthIndex[monthIndex].income += t.amountPaise;
-    else paiseByMonthIndex[monthIndex].expense += t.amountPaise;
-  });
-
-  return months.map((name, i) => ({
-    name,
-    income: paiseToRupees(paiseByMonthIndex[i].income),
-    expense: paiseToRupees(paiseByMonthIndex[i].expense),
-  }));
+// Same silhouette as the loaded page, so nothing jumps when data lands.
+function SummarySkeleton() {
+  return (
+    <div role="status" aria-live="polite" className="space-y-12">
+      <span className="sr-only">Loading your summary…</span>
+      <div>
+        <Skeleton className="h-3.5 w-16" />
+        <Skeleton className="mt-3 h-14 w-64 max-w-full" />
+        <Skeleton className="mt-4 h-4 w-56 max-w-full" />
+        <div className="mt-8 grid grid-cols-2 gap-8 border-t border-border pt-4">
+          <Skeleton className="h-10 w-36 max-w-full" />
+          <Skeleton className="h-10 w-36 max-w-full" />
+        </div>
+      </div>
+      <div>
+        <Skeleton className="h-4 w-48" />
+        <Skeleton className="mt-4 h-60 w-full" />
+      </div>
+    </div>
+  );
 }
