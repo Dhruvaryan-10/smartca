@@ -39,7 +39,7 @@ function sourceFiles(directory: string): string[] {
 }
 
 const RETRIEVAL = "services/tax-retrieval.ts";
-const CORPUS_MODULES = ["lib/rag/corpus.ts", "lib/rag/load-corpus.ts", "services/tax-corpus.ts", "services/tax-retrieval.ts", "scripts/rag-ingest.ts"];
+const CORPUS_MODULES = ["lib/rag/corpus.ts", "lib/rag/load-corpus.ts", "lib/rag/section-resolution.ts", "services/tax-corpus.ts", "services/tax-retrieval.ts", "scripts/rag-ingest.ts"];
 
 // --- request handlers cannot reach ingestion --------------------------------------
 

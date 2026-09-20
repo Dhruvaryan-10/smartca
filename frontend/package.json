@@ -11,6 +11,7 @@
     "db:seed": "tsx db/seed.ts",
     "db:verify": "tsx scripts/verify-db.ts",
     "rag:ingest": "tsx scripts/rag-ingest.ts",
+    "rag:eval": "tsx scripts/rag-eval.ts",
     "test": "tsx --test tests/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."

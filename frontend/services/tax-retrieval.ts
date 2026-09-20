@@ -11,6 +11,19 @@
 //   - honest: when the corpus does not support an answer it says so with a
 //     typed `insufficient_evidence` result instead of returning the nearest
 //     passage. It never falls back to another assessment year.
+//   - explicit about sections: a section the question names is matched to the
+//     passages filed under it, to passages that name it in their text (80CCD(1B)
+//     inside the 80C passage), or, for a clause, to its enclosing section. The
+//     result says which (`sectionResolutions`); it never presents a passage that
+//     merely cites a section as that section's text.
+//   - explicit about the year and the tier the question asks for (Phase 5C). The
+//     year is a parameter, so a question that itself names another year ("AY
+//     2024-25", "FY 2026-27" = AY 2027-28) is refused with `yearMismatch`, never
+//     answered with this year's evidence. And a question whose claim needs
+//     statute or a circular is refused with `authorityTier` when the corpus holds
+//     none of that tier for the year; when it does, only that tier is returned.
+//     The corpus is never relabelled: official guidance stays official guidance.
+//     Both are read from the question's own words (lib/rag/question-scope.ts).
 //
 // What this is NOT:
 //   - a calculator. The deterministic tax engine is the only source of tax
@@ -29,6 +42,9 @@ import { db } from "@/db/client";
 import { pgErrorCode } from "@/db/pg-errors";
 import { AUTHORITY_TIER_RANK, extractSectionRefs, normalizeSectionRef, sha256Text } from "@/lib/rag/corpus";
 import type { AuthorityTier, VerificationStatus } from "@/lib/rag/corpus";
+import { requiredAuthorityTiers, statedAssessmentYears } from "@/lib/rag/question-scope";
+import { resolveSectionRefs, sectionRefCore } from "@/lib/rag/section-resolution";
+import type { SectionBasis } from "@/lib/rag/section-resolution";
 import { ValidationError } from "./errors";
 
 // ---------------------------------------------------------------------
@@ -65,9 +81,39 @@ export type TaxEvidence = {
   score: number;
 };
 
+/**
+ * How the corpus covers a section the question named. It is about the passages, not about the law: it never says what
+ * the section provides.
+ *   indexed           passages are filed under exactly this section.
+ *   cited_in_passage  none is filed under it, but the returned passages name it in their text (80CCD(1B) inside the
+ *                     passage filed under 80C). The evidence is what the source says around the reference.
+ *   parent_section    the question named a clause (115BAC(1A)) the corpus does not have; the evidence is the enclosing
+ *                     section's guidance, and `clauseCovered` is false: clause-level wording is not present.
+ * Whether the engine models a provision is unaffected: read `verificationStatus` on the evidence.
+ */
+export type SectionResolution = {
+  /** The section as the question (or `sectionRef`) named it, in canonical form. */
+  requested: string;
+  basis: SectionBasis;
+  /** The section the passages are filed under or stand in for; the requested section for `cited_in_passage`. */
+  resolvedTo: string;
+  /** False only for `parent_section`. */
+  clauseCovered: boolean;
+  /** The returned evidence this resolution accounts for. */
+  evidenceIds: string[];
+};
+
+/**
+ *   no_corpus_for_assessment_year        the corpus holds nothing for the year asked for, or for the year the question names.
+ *   assessment_year_mismatch             the question names a year other than the one requested, and the corpus DOES hold it:
+ *                                        the request contradicts itself, so neither year's evidence is returned.
+ *   required_authority_tier_unavailable  the question's claim needs statute or a circular and the corpus holds none for the year.
+ */
 export type InsufficientReason =
   | "corpus_not_loaded"
   | "no_corpus_for_assessment_year"
+  | "assessment_year_mismatch"
+  | "required_authority_tier_unavailable"
   | "no_searchable_terms"
   | "section_not_in_corpus"
   | "no_matching_passages";
@@ -78,8 +124,10 @@ export type TaxRetrievalResult =
       assessmentYear: string;
       corpusVersion: string;
       evidence: TaxEvidence[];
-      /** Sections the question named that the corpus does not contain, so the gap is explicit. */
+      /** Sections the question named that the corpus does not contain in any form, so the gap is explicit. */
       unmatchedSectionRefs: string[];
+      /** For each named section the corpus covers: how it is covered. Empty when the question names no section. */
+      sectionResolutions: SectionResolution[];
     }
   | {
       status: "insufficient_evidence";
@@ -88,6 +136,10 @@ export type TaxRetrievalResult =
       corpusVersion: string | null;
       /** The section references the question named, if any. */
       sectionRefs: string[];
+      /** Present when the question names an assessment year other than `requested`: what was asked for and every year the question names. */
+      yearMismatch?: { requested: string; stated: string[] };
+      /** Present when the claim needs statute or a circular the corpus does not hold: the tiers needed (any one) and the tiers it does hold for the year. */
+      authorityTier?: { required: AuthorityTier[]; available: AuthorityTier[] };
     };
 
 // ---------------------------------------------------------------------
@@ -115,6 +167,8 @@ type SqlExecutor = Pick<typeof db, "execute">;
 
 const textArray = (items: string[]): SQL =>
   items.length === 0 ? sql`ARRAY[]::text[]` : sql`ARRAY[${sql.join(items.map((item) => sql`${item}`), sql`, `)}]::text[]`;
+const uuidArray = (items: string[]): SQL =>
+  items.length === 0 ? sql`ARRAY[]::uuid[]` : sql`ARRAY[${sql.join(items.map((item) => sql`${item}`), sql`, `)}]::uuid[]`;
 
 // ---------------------------------------------------------------------
 // Quotes
@@ -188,7 +242,8 @@ export function selectQuote(text: string, question: string): string {
 // Retrieval
 // ---------------------------------------------------------------------
 
-type ContextRow = { version: string | null; has_year: boolean; section_refs: string[]; lexemes: string[] };
+type ContextRow = { version: string | null; has_year: boolean; years: string[]; tiers: string[]; section_refs: string[]; lexemes: string[] };
+type MentionRow = { chunk_id: string; text: string };
 type CandidateRow = {
   chunk_id: string;
   chunk_index: number;
@@ -207,7 +262,7 @@ type CandidateRow = {
   matched_terms: number;
 };
 
-function readInput(input: TaxRetrievalInput): { question: string; assessmentYear: string; sectionRefs: string[] } {
+function readInput(input: TaxRetrievalInput): { question: string; assessmentYear: string; sectionRefs: string[]; statedYears: string[]; requiredTiers: AuthorityTier[] } {
   if (typeof input !== "object" || input === null) throw new ValidationError("A question and an assessment year are required.");
   const question = typeof input.question === "string" ? input.question.trim() : "";
   if (question === "") throw new ValidationError("question is required.");
@@ -223,7 +278,7 @@ function readInput(input: TaxRetrievalInput): { question: string; assessmentYear
     refs.push(explicit);
   }
   for (const ref of extractSectionRefs(question)) if (!refs.includes(ref)) refs.push(ref);
-  return { question, assessmentYear: input.assessmentYear, sectionRefs: refs };
+  return { question, assessmentYear: input.assessmentYear, sectionRefs: refs, statedYears: statedAssessmentYears(question), requiredTiers: requiredAuthorityTiers(question) };
 }
 
 /**
@@ -233,13 +288,18 @@ function readInput(input: TaxRetrievalInput): { question: string; assessmentYear
  * corpus to read: the corpus is global and this takes no user id.
  */
 export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExecutor = db): Promise<TaxRetrievalResult> {
-  const { question, assessmentYear, sectionRefs } = readInput(input);
-  const insufficient = (reason: InsufficientReason, corpusVersion: string | null): TaxRetrievalResult => ({
+  const { question, assessmentYear, sectionRefs, statedYears, requiredTiers } = readInput(input);
+  const insufficient = (
+    reason: InsufficientReason,
+    corpusVersion: string | null,
+    safety: { yearMismatch?: { requested: string; stated: string[] }; authorityTier?: { required: AuthorityTier[]; available: AuthorityTier[] } } = {},
+  ): TaxRetrievalResult => ({
     status: "insufficient_evidence",
     reason,
     assessmentYear,
     corpusVersion,
     sectionRefs,
+    ...safety,
   });
 
   try {
@@ -249,6 +309,8 @@ export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExec
         SELECT
           (SELECT version FROM tax_corpus_releases ORDER BY created_at DESC, id DESC LIMIT 1) AS version,
           EXISTS (SELECT 1 FROM tax_sources WHERE status = 'active' AND assessment_year = ${assessmentYear}) AS has_year,
+          ARRAY(SELECT DISTINCT assessment_year FROM tax_sources WHERE status = 'active') AS years,
+          ARRAY(SELECT DISTINCT authority_tier::text FROM tax_sources WHERE status = 'active' AND assessment_year = ${assessmentYear}) AS tiers,
           ARRAY(
             SELECT DISTINCT c.section_ref FROM tax_source_chunks c JOIN tax_sources s ON s.id = c.source_id
             WHERE s.status = 'active' AND s.assessment_year = ${assessmentYear} AND c.section_ref IS NOT NULL
@@ -259,14 +321,54 @@ export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExec
 
     if (!context || context.version === null) return insufficient("corpus_not_loaded", null);
     const corpusVersion = context.version;
+
+    // A question that itself names another assessment year is not answered from this year's corpus, and no passage is
+    // searched: evidence for the wrong year must never look like support. Decided before anything else about the request.
+    const otherYears = statedYears.filter((year) => year !== assessmentYear);
+    if (otherYears.length > 0) {
+      const held = otherYears.some((year) => context.years.includes(year));
+      return insufficient(held ? "assessment_year_mismatch" : "no_corpus_for_assessment_year", corpusVersion, { yearMismatch: { requested: assessmentYear, stated: statedYears } });
+    }
     if (!context.has_year) return insufficient("no_corpus_for_assessment_year", corpusVersion);
+
+    // A claim that needs statute or a circular is not answered with guidance. If the corpus holds none of the tier for
+    // this year it is refused (naming what IS held); if it does, only passages of that tier can be evidence.
+    const availableTiers = (context.tiers as AuthorityTier[]).slice().sort();
+    let tierFilter: AuthorityTier[] = [];
+    if (requiredTiers.length > 0) {
+      tierFilter = requiredTiers.filter((tier) => availableTiers.includes(tier));
+      if (tierFilter.length === 0) return insufficient("required_authority_tier_unavailable", corpusVersion, { authorityTier: { required: requiredTiers, available: availableTiers } });
+    }
+
     if (context.lexemes.length === 0 && sectionRefs.length === 0) return insufficient("no_searchable_terms", corpusVersion);
 
-    // A named section the corpus does not contain must not be answered with a nearby passage.
-    const known = new Set(context.section_refs);
-    const present = sectionRefs.filter((ref) => known.has(ref));
-    const unmatchedSectionRefs = sectionRefs.filter((ref) => !known.has(ref));
-    if (sectionRefs.length > 0 && present.length === 0) return insufficient("section_not_in_corpus", corpusVersion);
+    // A named section the corpus does not contain, in any form, must not be answered with a nearby passage.
+    // A section is contained if passages are filed under it, if passages name it in their text, or (for a clause)
+    // if the section it belongs to is filed: see lib/rag/section-resolution.ts. Only the sections that no passage
+    // is filed under need their passages' text read, and only to find the section references they name.
+    const indexed = new Set(context.section_refs);
+    const notIndexed = sectionRefs.filter((ref) => !indexed.has(ref));
+    const mentions = new Map<string, string[]>();
+    if (notIndexed.length > 0) {
+      const rows = (
+        await executor.execute<MentionRow>(sql`
+          SELECT c.id AS chunk_id, c."text" AS text
+          FROM tax_source_chunks c
+          JOIN tax_sources s ON s.id = c.source_id
+          WHERE s.status = 'active'
+            AND s.assessment_year = ${assessmentYear}
+            AND c."text" ILIKE ANY(${textArray(notIndexed.map((ref) => `%${sectionRefCore(ref)}%`))})
+        `)
+      ).rows;
+      for (const row of rows) mentions.set(row.chunk_id, extractSectionRefs(row.text));
+    }
+    const { resolved, unmatched: unmatchedSectionRefs } = resolveSectionRefs(sectionRefs, indexed, mentions);
+    if (sectionRefs.length > 0 && resolved.length === 0) return insufficient("section_not_in_corpus", corpusVersion);
+
+    // The passages a resolved section points to: those filed under it (or under its parent), and those that name it.
+    const filedUnder = new Set(resolved.flatMap((r) => (r.filedUnder === null ? [] : [r.filedUnder])));
+    const citing = new Set(resolved.flatMap((r) => r.citingChunkIds));
+    const targeted = sql`(coalesce(c.section_ref = ANY(${textArray([...filedUnder])}), false) OR c.id = ANY(${uuidArray([...citing])}))`;
 
     // 2. Candidate passages: only active sources, only this assessment year.
     const candidates = (
@@ -283,8 +385,9 @@ export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExec
         CROSS JOIN q
         WHERE s.status = 'active'
           AND s.assessment_year = ${assessmentYear}
-          AND (c.search_vector @@ q.orq OR c.section_ref = ANY(${textArray(present)}))
-        ORDER BY (c.section_ref = ANY(${textArray(present)})) DESC, text_rank DESC, s.source_key, c.chunk_index
+          AND ${tierFilter.length === 0 ? sql`TRUE` : sql`s.authority_tier::text = ANY(${textArray(tierFilter)})`}
+          AND (c.search_vector @@ q.orq OR ${targeted})
+        ORDER BY ${targeted} DESC, text_rank DESC, s.source_key, c.chunk_index
         LIMIT ${CANDIDATE_LIMIT}
       `)
     ).rows;
@@ -292,7 +395,7 @@ export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExec
     // 3. Keep passages the question actually bears on, then order by score, authority, then position.
     const scored = candidates
       .map((row) => {
-        const sectionMatch = row.section_ref !== null && present.includes(row.section_ref);
+        const sectionMatch = (row.section_ref !== null && filedUnder.has(row.section_ref)) || citing.has(row.chunk_id);
         const coverage = context.lexemes.length === 0 ? 0 : row.matched_terms / context.lexemes.length;
         const relevant = sectionMatch || (row.matched_terms >= MIN_MATCHED_TERMS && coverage >= MIN_TERM_COVERAGE);
         // Coverage counts as much as text rank: raw rank alone favours long, repetitive passages.
@@ -312,7 +415,10 @@ export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExec
     if (scored.length === 0) return insufficient("no_matching_passages", corpusVersion);
 
     const evidence: TaxEvidence[] = scored.map(({ row, score }) => {
-      const quote = selectQuote(row.text, question);
+      // A passage found because it names a section is quoted around that mention as well as around the question's
+      // words, so a generic question ("limit") does not quote another section's figure from the same passage.
+      const cited = resolved.filter((r) => r.citingChunkIds.includes(row.chunk_id)).map((r) => r.requested);
+      const quote = selectQuote(row.text, [question, ...cited].join(" "));
       // The contract, checked at the source: a quote is never anything but a slice of the stored passage.
       if (!row.text.includes(quote)) throw new Error("A selected quote was not part of its passage.");
       return {
@@ -334,7 +440,17 @@ export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExec
       };
     });
 
-    return { status: "ok", assessmentYear, corpusVersion, evidence, unmatchedSectionRefs };
+    const sectionResolutions: SectionResolution[] = resolved.map((r) => ({
+      requested: r.requested,
+      basis: r.basis,
+      resolvedTo: r.resolvedTo,
+      clauseCovered: r.clauseCovered,
+      evidenceIds: evidence
+        .filter((e) => (r.filedUnder !== null && e.sectionRef === r.filedUnder) || r.citingChunkIds.includes(e.chunkId))
+        .map((e) => e.evidenceId),
+    }));
+
+    return { status: "ok", assessmentYear, corpusVersion, evidence, unmatchedSectionRefs, sectionResolutions };
   } catch (error) {
     if (error instanceof ValidationError) throw error;
     // Drizzle errors carry the statement's parameters, and one of them is the question.

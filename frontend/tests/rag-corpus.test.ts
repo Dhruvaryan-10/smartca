@@ -105,6 +105,46 @@ test("sections are found in a question, with or without a prefix, and units and 
   assert.deepEqual(extractSectionRefs("87A rebate and again section 87A"), ["87A"], "each reference once");
 });
 
+test("a section number followed by a word is the number alone, not the number plus a few letters of the word", () => {
+  assert.deepEqual(extractSectionRefs("Does section 112 apply to surcharge?"), ["112"]);
+  assert.deepEqual(extractSectionRefs("What is section 16 of the Act about?"), ["16"]);
+  assert.deepEqual(extractSectionRefs("Section 87 rebate please"), ["87"]);
+  assert.deepEqual(extractSectionRefs("Is the surcharge capped under section 112 and 112A?"), ["112", "112A"]);
+  // Letters after a space still join the number when they are capitals, as in the portal's own "80 D".
+  assert.deepEqual(extractSectionRefs("Deduction u/s 80 D"), ["80D"]);
+  assert.deepEqual(extractSectionRefs("Section 80c and section 80d"), ["80C", "80D"]);
+});
+
+test("a clause may follow a space, is part of its section, and a bracketed word is not a clause", () => {
+  assert.deepEqual(extractSectionRefs("u/s 80CCD (1B) limit"), ["80CCD(1b)"], "no stray 80CCD or 1B");
+  assert.deepEqual(extractSectionRefs("Sec. 80CCD (1B) NPS"), ["80CCD(1b)"]);
+  assert.deepEqual(extractSectionRefs("80CCD (2) employer contribution"), ["80CCD(2)"], "the clause is kept");
+  assert.deepEqual(extractSectionRefs("What is 80CCD(1B)?"), ["80CCD(1b)"]);
+  assert.deepEqual(extractSectionRefs("Section 24(b) and section 24 (b) interest"), ["24(b)"]);
+  assert.deepEqual(extractSectionRefs("Section 115BAC(1A)"), ["115BAC(1a)"]);
+  assert.deepEqual(extractSectionRefs("Section 139(1) of the Act, and section 16(ia)"), ["139(1)", "16(ia)"]);
+  assert.deepEqual(extractSectionRefs("Compare 24(b) with 16(ia)"), [], "a number with only a clause needs the word section: nothing is guessed");
+  assert.deepEqual(extractSectionRefs("Is 87A (old) available? And Section 87A (new regime)?"), ["87A"], "(old) and (new regime) are words");
+  assert.deepEqual(extractSectionRefs("the clause (1B) says"), [], "a lone clause is not a section");
+  assert.deepEqual(extractSectionRefs("rebate (87A) limit"), ["87A"], "a bracketed section is still a section");
+});
+
+test("a list after a section keyword names every section in it, and a number is a section only where the list goes on", () => {
+  assert.deepEqual(extractSectionRefs("sections 111A, 112 and 112A surcharge cap"), ["111A", "112", "112A"]);
+  assert.deepEqual(extractSectionRefs("Section 80C, 80CCC, 80CCD (1) and 80CCD(1B)"), ["80C", "80CCC", "80CCD(1)", "80CCD(1b)"]);
+  assert.deepEqual(extractSectionRefs("under section 115A, 115AB, 115AC, 115ACA and 115E."), ["115A", "115AB", "115AC", "115ACA", "115E"]);
+  assert.deepEqual(extractSectionRefs("Section 87A, 12 lakh income"), ["87A"], "a quantity is not a section");
+  assert.deepEqual(extractSectionRefs("Section 87A and 12 months"), ["87A"]);
+  assert.deepEqual(extractSectionRefs("section 80C and 2 children, or 50L"), ["80C"]);
+  assert.deepEqual(extractSectionRefs("Rs. 5,00,000 and 12,00,000 income in the 24th month"), [], "no keyword, no section");
+});
+
+test("section references are found in a corpus passage the same way, which is what lets a passage be matched to a named section", () => {
+  const passage = "Section 80C, 80CCC, 80CCD (1)\n80C | Life Insurance Premium | Combined deduction limit of ₹ 1,50,000\n80CCC | Annuity plan\n" +
+    "2. Taxpayers claiming deduction u/s 80CCD (1),80CCD (1B) must provide the details\nSection 24(b) – interest; ₹ 12,00,000; Up to ₹ 4,00,000 | Nil; 50 Lakhs | 1 Crore";
+  assert.deepEqual(extractSectionRefs(passage), ["80C", "80CCC", "80CCD(1)", "80CCD(1b)", "24(b)"]);
+});
+
 // --- chunking ---------------------------------------------------------------
 
 const normalized = normalizeSourceText(FIXTURE_TEXT);

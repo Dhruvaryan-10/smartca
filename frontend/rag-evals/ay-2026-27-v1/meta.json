@@ -1,0 +1,25 @@
+{
+  "datasetVersion": "ay-2026-27-eval-v1",
+  "corpusVersion": "ay-2026-27-v1",
+  "assessmentYear": "2026-27",
+  "description": "56-case evaluation set for lexical tax-law retrieval over the AY 2026-27 corpus: slabs and regimes, 87A, 80C, 80D, the standard deduction gap, surcharge, cess, senior citizens, assessment-year isolation, engine routing, sections missing from the corpus or its section index, insufficient-evidence cases and out-of-scope questions. Independent of the 19 developer-written regression cases in rag-corpus/ay-2026-27/retrieval-tests.json.",
+  "provenance": "Designed in the Phase 5B discovery report (2026-09-20) from the corpus as shipped, before any retrieval result was observed. Gold evidence was determined by reading the source files, never by looking at what retrieval returned. The dev/test split, the behaviours and the review lists are the discovery report's. One creation-time revision, made before any retrieval result was observed and before the freeze was recorded: the test questions idx-04 and idx-05 were reworded (the report's wording, 'What does section 80CCH cover?' and 'What does section 115BAC(1A) say?', appears verbatim in tests/rag-section-refs.test.ts, which the section-reference fix was developed against). Their sections and gold labels are unchanged. The fix still targeted those sections, so wording is all that could be decontaminated: section-resolution results on the idx-* cases are weak held-out evidence.",
+  "splits": {
+    "dev": [
+      "slb-01", "slb-02", "slb-04", "slb-05", "reb-03", "c80-02", "d80-01", "sur-01", "ces-01", "sen-01", "idx-01",
+      "idx-02", "ayi-01", "ayi-02", "ayi-03", "mis-01", "mis-02", "ins-01", "eng-01", "eng-04", "oos-02", "oos-05"
+    ],
+    "test": [
+      "slb-03", "c80-03", "d80-02", "sur-02", "sur-03", "sur-05", "sen-02", "idx-03", "idx-04",
+      "reb-01", "reb-02", "c80-01", "std-01", "std-02", "ces-02", "sen-03", "sen-04", "ayi-04", "ayi-05", "mis-03", "mis-04", "idx-05", "ins-02", "ins-03", "ins-04",
+      "eng-02", "eng-03", "eng-05", "eng-06", "d80-03", "sur-04",
+      "oos-01", "oos-03", "oos-04"
+    ]
+  },
+  "testFreeze": {
+    "fingerprintSha256": "a98c8530e7638856cf958214d91d9746bec6d3ad23d1e2e28d098fafc4f57c8d",
+    "caseCount": 34,
+    "frozenOn": "2026-09-20",
+    "rule": "The 34 test cases (and the gold definitions they cite) were frozen on creation, before any retrieval result was observed. Their labels must never be edited to fit a result; a change needs a new dataset version. Retrieval must not be tuned against them. Only free-text notes may change."
+  }
+}

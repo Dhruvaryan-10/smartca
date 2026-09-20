@@ -178,27 +178,76 @@ export function normalizeSectionRef(input: string): string | null {
 // "50L" (lakh), "2Cr", "1st"... look like section references and are not.
 const NOT_SECTION_SUFFIXES = new Set(["L", "CR", "K", "M", "LAC", "LAKH", "LAKHS", "CRORE", "CRORES", "ST", "ND", "RD", "TH"]);
 
+// A clause after a section number: "(1B)", "(2)", "(b)", "(ia)", with or without a space before it. Deliberately
+// narrow (digits, one letter, or a roman numeral), so a bracketed word such as "87A (old)" is not read as a clause.
+const CLAUSE = String.raw`\s?\((?:\d{1,2}[A-Za-z]{0,2}|[A-Za-z]|[ivxIVX]{1,4}[A-Za-z]?)\)`;
+// A section number, its letters, and its clauses. Letters may follow a space only in capitals ("80 D"), so a
+// number followed by a word ("section 112 apply", "section 16 of") is the number alone.
+const FIRST_REF = new RegExp(String.raw`\d{1,3}(?:[A-Za-z]{1,4}(?![A-Za-z])|[ \t][A-Z]{1,4}(?![A-Za-z])|)(?:${CLAUSE})*`, "y");
+const NEXT_REF = new RegExp(String.raw`\d{1,3}(?:[A-Za-z]{1,4}(?![A-Za-z])|)(?:${CLAUSE})*`, "y");
+const BARE_REF = new RegExp(String.raw`(?<![\w.])(\d{1,3}[A-Z]{1,4}(?:${CLAUSE})*)(?!\w)`, "g");
+const KEYWORD = /\b(?:sections?|sec\.?|u\/s|s\.)\s*/gi;
+const LIST_SEPARATOR = /\s*(?:[,;&]|\b(?:and|or)\b)\s*(?:(?:and|or)\b\s*)?/iy;
+// A bare number ("112") inside a list is a section only where the list visibly goes on or ends: "sections 111A,
+// 112 and 112A" yes, "section 87A, 12 lakh income" no.
+const LIST_CONTINUES = /[ \t]*(?:[,.;:?!)&\n]|$|(?:and|or)\b)/iy;
+
 /**
- * The section references a question names, in order, canonical, unique. Two shapes count: an explicit
- * "section"/"sec."/"u/s" prefix, or a bare upper-case reference such as 87A, 80C, 115BAC.
+ * The section references named in a piece of text (a question, or a corpus passage), in order, canonical, unique.
+ * Three shapes count:
+ *   - a "section" / "sections" / "sec." / "u/s" keyword followed by a reference, and the references the list goes on
+ *     to name ("sections 111A, 112 and 112A");
+ *   - a bare upper-case reference such as 87A, 80C, 115BAC, 80CCD (1B);
+ *   - nothing else: a number on its own is never a section without a keyword, so "12,00,000" or "50 lakhs" cannot be one.
  */
 export function extractSectionRefs(question: string): string[] {
-  const found: string[] = [];
-  const add = (raw: string) => {
-    const ref = normalizeSectionRef(raw);
-    if (ref && !found.includes(ref)) found.push(ref);
-  };
-
-  const prefixed = /\b(?:section|sec\.?|u\/s|s\.)\s*(\d{1,3}\s?[A-Za-z]{0,4}(?:\s*\([A-Za-z0-9]{1,4}\))*)/gi;
-  const bare = /(?<![\w.])(\d{1,3}[A-Z]{1,4}(?:\([A-Za-z0-9]{1,4}\))*)(?!\w)/g;
-
   const tokens: Array<{ index: number; raw: string }> = [];
-  for (const m of question.matchAll(prefixed)) tokens.push({ index: m.index ?? 0, raw: m[1] });
-  for (const m of question.matchAll(bare)) {
-    const suffix = /^\d+([A-Z]+)/.exec(m[1])?.[1] ?? "";
-    if (!NOT_SECTION_SUFFIXES.has(suffix)) tokens.push({ index: m.index ?? 0, raw: m[1] });
+  const consumed: Array<[number, number]> = [];
+
+  for (const keyword of question.matchAll(KEYWORD)) {
+    const listStart = keyword.index ?? 0;
+    let at = listStart + keyword[0].length;
+    FIRST_REF.lastIndex = at;
+    const first = FIRST_REF.exec(question);
+    if (!first) continue;
+    tokens.push({ index: at, raw: first[0] });
+    at += first[0].length;
+
+    for (;;) {
+      LIST_SEPARATOR.lastIndex = at;
+      const separator = LIST_SEPARATOR.exec(question);
+      if (!separator) break;
+      const from = at + separator[0].length;
+      NEXT_REF.lastIndex = from;
+      const item = NEXT_REF.exec(question);
+      if (!item) break;
+      const letters = /^\d+([A-Za-z]*)/.exec(item[0])?.[1] ?? "";
+      if (letters !== "" && NOT_SECTION_SUFFIXES.has(letters.toUpperCase())) break;
+      if (letters === "" && !item[0].includes("(")) {
+        LIST_CONTINUES.lastIndex = from + item[0].length;
+        if (!LIST_CONTINUES.test(question)) break;
+      }
+      tokens.push({ index: from, raw: item[0] });
+      at = from + item[0].length;
+    }
+    consumed.push([listStart, at]);
   }
-  tokens.sort((a, b) => a.index - b.index).forEach((t) => add(t.raw));
+
+  for (const m of question.matchAll(BARE_REF)) {
+    const index = m.index ?? 0;
+    if (consumed.some(([from, to]) => index >= from && index < to)) continue;
+    const suffix = /^\d+([A-Z]+)/.exec(m[1])?.[1] ?? "";
+    if (NOT_SECTION_SUFFIXES.has(suffix)) continue;
+    // "(1B)" on its own is a clause, not section 1B; "(87A)" is a section.
+    if (question[index - 1] === "(" && /^\d\D/.test(m[1])) continue;
+    tokens.push({ index, raw: m[1] });
+  }
+
+  const found: string[] = [];
+  for (const token of tokens.sort((a, b) => a.index - b.index)) {
+    const ref = normalizeSectionRef(token.raw);
+    if (ref && !found.includes(ref)) found.push(ref);
+  }
   return found;
 }
 
