@@ -78,9 +78,15 @@ export function calculateTax(input: TaxInput): TaxResult {
     children: slabComputation.nodes,
   };
 
-  // 8. Rebate (Section 87A). New-regime marginal relief is implemented
-  //    (verified — see rebate.ts); old-regime marginal relief remains
-  //    blocked (not verified to the same standard).
+  // 8. Rebate (Section 87A). Both regimes: the rebate applies up to the
+  //    regime's maximum when taxable income is at or below its threshold.
+  //    Above the threshold, the new regime gets marginal relief
+  //    (implemented and verified — see rebate.ts); the old regime gets NO
+  //    rebate and no marginal relief, and the engine does not refuse: it
+  //    computes normally, because the Income Tax Department's guidance
+  //    describes marginal relief for surcharge only. (Earlier versions
+  //    refused the old-regime band above the threshold; Phase 3 removed
+  //    that refusal.)
   const rebateNode = computeRebate(taxableIncomePaise, slabComputation.totalTaxPaise, regimeRules.rebate, input.regime);
   const taxAfterRebatePaise = slabComputation.totalTaxPaise + rebateNode.amountPaise; // rebateNode.amountPaise is <= 0
 

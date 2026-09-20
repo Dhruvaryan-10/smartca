@@ -15,8 +15,10 @@
 // to `users`, `ON DELETE CASCADE`, so deleting a user cannot leave
 // orphaned financial records behind.
 
+import { sql } from "drizzle-orm";
 import {
   bigint,
+  check,
   customType,
   date,
   index,
@@ -269,4 +271,106 @@ export const documentExtractions = pgTable("document_extractions", {
 }, (table) => [
   uniqueIndex("document_extractions_document_id_unique").on(table.documentId),
   index("document_extractions_user_id_idx").on(table.userId),
+]);
+
+// ---------------------------------------------------------------------
+// Tax-law corpus (Phase 5A) — GLOBAL, read-only reference data.
+// ---------------------------------------------------------------------
+// Authoritative tax-law sources and their chunks, for retrieval. NOTHING
+// here belongs to a user: there is deliberately no `user_id` on any of these
+// tables, and no user financial data (transactions, documents, Form 16
+// values, computations) is ever stored in or joined to them.
+//
+// They are written only by the ingestion script (scripts/rag-ingest.ts) from
+// the curated files in rag-corpus/. Request handlers only ever SELECT from
+// them (services/tax-retrieval.ts). The database has one application role, so
+// this is enforced by code structure and tests, not by grants.
+//
+// The governing act is recorded on every source. For AY 2026-27 it is the
+// Income-tax Act, 1961; text and section numbers of the Income-tax Act, 2025
+// must never be mixed into the same corpus.
+
+// Highest authority first in meaning (see lib/rag/corpus.ts). Only official
+// sources are accepted; there is no tier for commentary.
+export const taxAuthorityTier = pgEnum("tax_authority_tier", ["statute", "notification_circular", "official_guidance"]);
+export const taxSourceStatus = pgEnum("tax_source_status", ["active", "superseded", "withdrawn"]);
+export const taxChunkRegime = pgEnum("tax_chunk_regime", ["old", "new", "both"]);
+// primary_verified: verbatim from the official source, as retrieved.
+// engine_not_modelled: verbatim too, but the deterministic engine does not model the
+// provision, so retrieval must never imply the engine computes it.
+export const taxVerificationStatus = pgEnum("tax_verification_status", ["primary_verified", "engine_not_modelled"]);
+
+// PostgreSQL full-text search vector. Drizzle has no built-in type for it.
+const tsvector = customType<{ data: string }>({
+  dataType() {
+    return "tsvector";
+  },
+});
+
+export const taxSources = pgTable("tax_sources", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Stable, human-readable key from the manifest. Ingestion upserts on it.
+  sourceKey: text("source_key").notNull(),
+  title: text("title").notNull(),
+  publisher: text("publisher").notNull(),
+  url: text("url").notNull(),
+  authorityTier: taxAuthorityTier("authority_tier").notNull(),
+  governingAct: text("governing_act").notNull(),
+  // The assessment year this source is curated for, e.g. "2026-27". Retrieval only ever
+  // returns sources for the year asked about.
+  assessmentYear: text("assessment_year").notNull(),
+  // When the source says it was published or last reviewed, if it says.
+  sourceDate: date("source_date"),
+  effectiveFrom: date("effective_from"),
+  effectiveTo: date("effective_to"),
+  // When the text was actually fetched by a person and curated.
+  retrievedAt: timestamp("retrieved_at", { withTimezone: true }).notNull(),
+  // SHA-256 of the normalised source text.
+  contentSha256: text("content_sha256").notNull(),
+  status: taxSourceStatus("status").notNull().default("active"),
+}, (table) => [
+  uniqueIndex("tax_sources_source_key_unique").on(table.sourceKey),
+  index("tax_sources_assessment_year_status_idx").on(table.assessmentYear, table.status),
+  check("tax_sources_effective_dates_check", sql`${table.effectiveFrom} IS NULL OR ${table.effectiveTo} IS NULL OR ${table.effectiveFrom} <= ${table.effectiveTo}`),
+]);
+
+export const taxSourceChunks = pgTable("tax_source_chunks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceId: uuid("source_id").notNull().references(() => taxSources.id, { onDelete: "cascade" }),
+  chunkIndex: integer("chunk_index").notNull(),
+  // Canonical section reference such as "87A" or "16(ia)"; null when the passage is not tied to one.
+  sectionRef: text("section_ref"),
+  // The headings above the passage, outermost first.
+  headingPath: text("heading_path").array().notNull(),
+  // An exact slice of the source text. A retrieved quote is an exact substring of this.
+  text: text("text").notNull(),
+  textSha256: text("text_sha256").notNull(),
+  // The slice's offsets in the normalised source text.
+  charStart: integer("char_start").notNull(),
+  charEnd: integer("char_end").notNull(),
+  regime: taxChunkRegime("regime").notNull().default("both"),
+  topics: text("topics").array().notNull(),
+  verificationStatus: taxVerificationStatus("verification_status").notNull().default("primary_verified"),
+  // Generated by PostgreSQL from the section reference (weight A) and the text (weight C). The
+  // heading path is not part of it: array_to_string is not immutable, so it cannot be.
+  searchVector: tsvector("search_vector").generatedAlwaysAs(
+    sql`setweight(to_tsvector('english', coalesce("section_ref", '')), 'A') || setweight(to_tsvector('english', "text"), 'C')`,
+  ),
+}, (table) => [
+  uniqueIndex("tax_source_chunks_source_id_chunk_index_unique").on(table.sourceId, table.chunkIndex),
+  index("tax_source_chunks_section_ref_idx").on(table.sectionRef),
+  index("tax_source_chunks_search_vector_idx").using("gin", table.searchVector),
+  check("tax_source_chunks_position_check", sql`${table.chunkIndex} >= 0 AND ${table.charStart} >= 0 AND ${table.charEnd} > ${table.charStart}`),
+]);
+
+// One row per ingested corpus version. Every evidence object carries the version it came from.
+export const taxCorpusReleases = pgTable("tax_corpus_releases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  version: text("version").notNull(),
+  // Hash over the canonical manifest and every source's content hash.
+  manifestSha256: text("manifest_sha256").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("tax_corpus_releases_version_unique").on(table.version),
+  uniqueIndex("tax_corpus_releases_manifest_sha256_unique").on(table.manifestSha256),
 ]);

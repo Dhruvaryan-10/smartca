@@ -1,0 +1,121 @@
+{
+  "description": "Initial retrieval regression cases for the AY 2026-27 seed corpus. Each case is pass/fail against the CURRENT lexical retrieval. This is a regression set, not an accuracy measurement: it is small, was written by the developer who built the retrieval, and has no held-out split, so no accuracy percentage may be derived from it.",
+  "cases": [
+    {
+      "id": "87a-new-regime-limit",
+      "topic": "87A",
+      "question": "What is the Section 87A rebate limit under the new tax regime?",
+      "expect": { "status": "ok", "topSectionRef": "87A", "topQuoteIncludes": ["60,000"] }
+    },
+    {
+      "id": "87a-old-regime-condition",
+      "topic": "87A",
+      "question": "Which rebate applies under section 87A in the old tax regime and what is the income condition?",
+      "expect": { "status": "ok", "topSectionRef": "87A", "topQuoteIncludes": ["12,500"] }
+    },
+    {
+      "id": "87a-explicit-section-param",
+      "topic": "87A",
+      "question": "rebate",
+      "sectionRef": "87A",
+      "expect": { "status": "ok", "topSectionRef": "87A" }
+    },
+    {
+      "id": "80c-limit",
+      "topic": "80C",
+      "question": "What is the combined deduction limit under Section 80C?",
+      "expect": { "status": "ok", "topSectionRef": "80C", "topQuoteIncludes": ["1,50,000"] }
+    },
+    {
+      "id": "80d-parents",
+      "topic": "80D",
+      "question": "What is the health insurance deduction limit under Section 80D for parents?",
+      "expect": { "status": "ok", "topSectionRef": "80D", "topQuoteIncludes": ["25,000"] }
+    },
+    {
+      "id": "115bac-default-regime",
+      "topic": "115BAC",
+      "question": "Under section 115BAC, is the new tax regime the default regime?",
+      "expect": { "status": "ok", "topSectionRef": "115BAC", "topQuoteIncludes": ["default"] }
+    },
+    {
+      "id": "115bac-new-regime-deductions",
+      "topic": "115BAC",
+      "question": "What deductions are available under the new tax regime?",
+      "expect": { "status": "ok", "topSectionRef": "115BAC", "topVerificationStatus": "engine_not_modelled" }
+    },
+    {
+      "id": "surcharge-50-lakhs-to-1-crore",
+      "topic": "surcharge",
+      "question": "What surcharge applies to income between 50 lakhs and 1 crore?",
+      "expect": { "status": "ok", "anyInTop": { "n": 3, "quoteIncludes": "Rs. 50 lakhs to Rs. 1 Crore | 10% | 10%" } }
+    },
+    {
+      "id": "surcharge-marginal-relief",
+      "topic": "surcharge",
+      "question": "Is marginal relief available on surcharge above 50 lakhs?",
+      "expect": { "status": "ok", "topQuoteIncludes": ["Marginal relief can be claimed from surcharge"] }
+    },
+    {
+      "id": "cess-rate",
+      "topic": "cess",
+      "question": "What is the rate of health and education cess?",
+      "expect": { "status": "ok", "topQuoteIncludes": ["cess @ 4%"] }
+    },
+    {
+      "id": "senior-citizen-definition",
+      "topic": "age category",
+      "question": "Who is a senior citizen for income tax purposes?",
+      "expect": { "status": "ok", "topQuoteIncludes": ["60 years or above"] }
+    },
+    {
+      "id": "slabs-below-60",
+      "topic": "slabs",
+      "question": "What are the slab rates for someone below 60 years?",
+      "expect": { "status": "ok", "anyInTop": { "n": 3, "quoteIncludes": "less than 60 years" } }
+    },
+    {
+      "id": "standard-deduction-16ia",
+      "topic": "standard deduction (known gap)",
+      "question": "What is the standard deduction under Section 16(ia)?",
+      "expect": { "status": "insufficient_evidence", "reason": "section_not_in_corpus", "sectionRefs": ["16(ia)"] }
+    },
+    {
+      "id": "standard-deduction-plain-language",
+      "topic": "standard deduction (known gap)",
+      "question": "How much is the standard deduction for salaried employees?",
+      "expect": { "status": "insufficient_evidence", "reason": "no_matching_passages" }
+    },
+    {
+      "id": "288a-rounding-total-income",
+      "topic": "288A (known gap)",
+      "question": "How is total income rounded under section 288A?",
+      "expect": { "status": "insufficient_evidence", "reason": "section_not_in_corpus", "sectionRefs": ["288A"] }
+    },
+    {
+      "id": "288b-rounding-tax-payable",
+      "topic": "288B (known gap)",
+      "question": "How is tax payable rounded under Section 288B?",
+      "expect": { "status": "insufficient_evidence", "reason": "section_not_in_corpus", "sectionRefs": ["288B"] }
+    },
+    {
+      "id": "outside-the-corpus",
+      "topic": "out of scope",
+      "question": "What is the tax on capital gains from shares?",
+      "expect": { "status": "insufficient_evidence", "reason": "no_matching_passages" }
+    },
+    {
+      "id": "partly-covered-question",
+      "topic": "87A + 288A",
+      "question": "What is the Section 87A rebate, and how is it rounded under section 288A?",
+      "expect": { "status": "ok", "topSectionRef": "87A", "unmatchedSectionRefs": ["288A"] }
+    },
+    {
+      "id": "other-assessment-year-is-not-substituted",
+      "topic": "assessment year",
+      "question": "What is the Section 87A rebate limit?",
+      "assessmentYear": "2025-26",
+      "expect": { "status": "insufficient_evidence", "reason": "no_corpus_for_assessment_year" }
+    }
+  ]
+}
