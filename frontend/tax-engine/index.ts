@@ -2,8 +2,8 @@
 // should import from "@/tax-engine" (this file), not reach into
 // individual modules like "@/tax-engine/slabs" directly.
 export { calculateTax, ENGINE_VERSION } from "./engine";
-export { compareRegimes, comparisonNumbers } from "./compare";
-export type { ComparisonInput, ComparisonNumbers, RegimeComparison, RegimeOutcome, TaxRefusal } from "./compare";
+export { compareRegimes, comparisonNumbers, scenarioDelta, ScenarioMismatchError } from "./compare";
+export type { ComparisonInput, ComparisonNumbers, RegimeComparison, RegimeOutcome, ScenarioDelta, TaxRefusal } from "./compare";
 export { deductionCapsFor } from "./compute";
 export type { DeductionCaps } from "./compute";
 export { getSupportedAssessmentYearLabels, resolveAssessmentYearRules } from "./rules";

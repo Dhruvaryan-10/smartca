@@ -1,5 +1,7 @@
 # SmartCA Migration Checkpoint — Phase 0
 
+> **Status of this document: a HISTORICAL migration record, not the current state of the application.** It was written at the Phase 0 checkpoint (with a Phase 1A status appended) and is kept unchanged as a record. Its present-tense wording ("not reconnected to PostgreSQL yet", "will load with empty data", "Phase 1 will build", "Next: Auth.js") describes that moment and is **out of date**. Since then: PostgreSQL with Drizzle exists and the frontend is connected to it; Auth.js session authentication exists; a user-scoped service layer enforces ownership; the deterministic tax engine, document and CSV import, and tax-law retrieval have been built; and **MongoDB is no longer an application dependency**. The only MongoDB code left is the legacy `backend/app.py` (PyMongo), which is not part of the application and is non-functional. For the current security status read `SECURITY.md`. As of 2026-09-20 an assistant layer exists as internal code only, with no production API route, UI or model provider. No historical fact below has been altered.
+
 This document records the state of the SmartCA repository at the point MongoDB was removed as an active dependency, and how to recover the original v1 code if ever needed. See also `docs/SMARTCA-REPOSITORY-AUDIT.md` (the full v1 audit) and `SECURITY.md` (current security status).
 
 ## Original v1 state

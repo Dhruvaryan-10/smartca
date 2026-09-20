@@ -63,6 +63,72 @@ export function comparisonNumbers(oldResult: TaxResult | null, newResult: TaxRes
   };
 }
 
+// ---------------------------------------------------------------------
+// What-if: the SIGNED change between a base result and a scenario result
+// ---------------------------------------------------------------------
+
+/**
+ * A scenario can only be compared with a base computed under the same assessment year, regime, engine version and
+ * rules version; anything else would be subtracting unlike things.
+ */
+export class ScenarioMismatchError extends Error {
+  constructor(readonly fields: string[]) {
+    super(`A scenario can only be compared with a base computed under the same ${fields.join(", ")}.`);
+    this.name = "ScenarioMismatchError";
+  }
+}
+
+export type ScenarioDelta = {
+  assessmentYearLabel: string;
+  regime: TaxRegime;
+  engineVersion: string;
+  rulesVersion: string;
+  base: { totalTaxPaise: number; taxableIncomePaise: number };
+  scenario: { totalTaxPaise: number; taxableIncomePaise: number };
+  /**
+   * Scenario minus base, SIGNED: negative means the scenario pays less. Unlike `ComparisonNumbers.differencePaise`
+   * this is never an absolute value, so the direction of the change is never lost.
+   */
+  change: {
+    totalTaxPaise: number;
+    taxableIncomePaise: number;
+    totalDeductionsPaise: number;
+    rebatePaise: number;
+    surchargePaise: number;
+    cessPaise: number;
+  };
+};
+
+const SCENARIO_MATCH_FIELDS = ["assessmentYearLabel", "regime", "engineVersion", "rulesVersion"] as const;
+
+/**
+ * The signed change from `base` to `scenario`: two results the engine itself produced, subtracted here so that no
+ * tax arithmetic is ever done outside the engine. Pure; changes neither argument. Throws ScenarioMismatchError
+ * (naming every field that differs) unless both were computed under the same assessment year, regime, engine version
+ * and rules version. A different age category or different income is not a mismatch: that is what a scenario is.
+ */
+export function scenarioDelta(base: TaxResult, scenario: TaxResult): ScenarioDelta {
+  const mismatched = SCENARIO_MATCH_FIELDS.filter((field) => base[field] !== scenario[field]);
+  if (mismatched.length > 0) throw new ScenarioMismatchError([...mismatched]);
+
+  return {
+    assessmentYearLabel: base.assessmentYearLabel,
+    regime: base.regime,
+    engineVersion: base.engineVersion,
+    rulesVersion: base.rulesVersion,
+    base: { totalTaxPaise: base.totalTaxPaise, taxableIncomePaise: base.taxableIncomePaise },
+    scenario: { totalTaxPaise: scenario.totalTaxPaise, taxableIncomePaise: scenario.taxableIncomePaise },
+    change: {
+      totalTaxPaise: scenario.totalTaxPaise - base.totalTaxPaise,
+      taxableIncomePaise: scenario.taxableIncomePaise - base.taxableIncomePaise,
+      totalDeductionsPaise: scenario.totalDeductionsPaise - base.totalDeductionsPaise,
+      rebatePaise: scenario.rebatePaise - base.rebatePaise,
+      surchargePaise: scenario.surchargePaise - base.surchargePaise,
+      cessPaise: scenario.cessPaise - base.cessPaise,
+    },
+  };
+}
+
 function runRegime(
   regime: TaxRegime,
   input: TaxInput,
