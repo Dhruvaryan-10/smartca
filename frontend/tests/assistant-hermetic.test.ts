@@ -22,13 +22,20 @@ const PURE_SOURCE = [
   "services/assistant/model.ts",
   "services/assistant/orchestrator.ts",
   "services/assistant/ask.ts",
+  "services/assistant/config.ts",
+  "services/assistant/synthetic.ts",
+  "services/assistant/synthetic-model.ts",
+  "services/assistant/synthetic-tools.ts",
 ];
 /** Pure test fixtures and tests: none may need a database to LOAD. */
 const PURE_TESTS = [
   "tests/assistant-answer.test.ts",
   "tests/assistant-answer-eval.test.ts",
   "tests/assistant-answer-hardening.test.ts",
+  "tests/assistant-config.test.ts",
   "tests/assistant-errors.test.ts",
+  "tests/assistant-model-limits.test.ts",
+  "tests/assistant-synthetic.test.ts",
   "tests/assistant-hermetic.test.ts",
   "tests/assistant-model.test.ts",
   "tests/assistant-orchestrator.test.ts",

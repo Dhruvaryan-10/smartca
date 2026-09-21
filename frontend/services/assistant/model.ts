@@ -6,6 +6,12 @@
 //   - It knows no provider, no SDK, no endpoint and no credential. Which provider or router sits behind it is
 //     UNDECIDED: the project has named OmniRoute but not specified what it is (see SECURITY.md, "Open decisions"), so nothing
 //     is invented here. A future provider is one small `ModelAdapter` implementation.
+//   - Phase 6K: every adapter runs under provider-neutral LIMITS enforced by withModelGuard, whether or not the adapter honours
+//     them: a per-call timeout, a total run deadline and an outside AbortSignal (each a typed ModelProviderError, from a closed
+//     set of codes with fixed messages and no provider text); an output-size limit (refused, never cut); an allow-list of approved
+//     recipients (an answer from any other, or from none, fails closed before its content is used); and metadata about who
+//     answered (recipient, model, token counts, never content). An adapter is told its deadline and given the signal, and should
+//     stop early; nothing depends on it.
 //   - It knows none of SmartCA's tools. A tool is only a name, a description and a JSON schema the caller supplies; the
 //     definitions of SmartCA's own tools live elsewhere, and this file never runs one.
 //   - It has no database, no tax calculation and no authorization. A request has no user field, and the guards below are strict
@@ -44,10 +50,23 @@ export type ModelMessage =
 
 export type ModelRequest = { messages: ModelMessage[]; tools?: ModelToolDeclaration[] };
 
-export type ModelResponse = { kind: "text"; text: string } | { kind: "tool_calls"; calls: ModelToolCall[] };
+/**
+ * Who answered, for the audit. An opaque recipient id and model id (plain identifiers, never a URL or a key) and, when the
+ * recipient reports them, token counts. It carries no content. An adapter that fronts a router MUST report the recipient that
+ * actually answered, because every fallback is another recipient of the same data.
+ */
+export type ModelResponseMeta = { recipient: string; model: string; inputTokens?: number; outputTokens?: number };
+
+export type ModelResponse = ({ kind: "text"; text: string } | { kind: "tool_calls"; calls: ModelToolCall[] }) & { meta?: ModelResponseMeta };
+
+/**
+ * What the guard tells an adapter about THIS call (the request itself stays data only). An adapter should honour the signal and
+ * stop early, but nothing depends on it: the guard enforces the deadline and the size limit even when it does not.
+ */
+export type ModelCallOptions = { signal?: AbortSignal; timeoutMs?: number; maxOutputChars?: number };
 
 export interface ModelAdapter {
-  complete(request: ModelRequest): Promise<ModelResponse>;
+  complete(request: ModelRequest, options?: ModelCallOptions): Promise<ModelResponse>;
 }
 
 // ---------------------------------------------------------------------
@@ -105,6 +124,45 @@ export class ModelResponseError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ModelResponseError";
+  }
+}
+
+/** The provider-neutral ways a model call can fail. A closed set: an adapter maps whatever its provider does onto one of these. */
+export const MODEL_ERROR_CODES = [
+  "timeout",
+  "budget_exceeded",
+  "aborted",
+  "rate_limited",
+  "refused",
+  "unavailable",
+  "invalid_response",
+  "output_too_large",
+  "recipient_not_approved",
+] as const;
+export type ModelErrorCode = (typeof MODEL_ERROR_CODES)[number];
+
+const MODEL_ERROR_MESSAGES: Record<ModelErrorCode, string> = {
+  timeout: "The model call timed out.",
+  budget_exceeded: "The time budget for this run was used up.",
+  aborted: "The model call was cancelled.",
+  rate_limited: "The model service is limiting requests.",
+  refused: "The model service refused the request.",
+  unavailable: "The model service is unavailable.",
+  invalid_response: "The model service returned an answer that could not be used.",
+  output_too_large: "The model's answer was longer than the allowed size.",
+  recipient_not_approved: "The answer came from a recipient that is not approved.",
+};
+
+/**
+ * A model call failed in a way SmartCA understands. It has a code and a fixed message and NOTHING else: no cause, no provider
+ * text, no request, no key. That is what makes it safe to log or return as it is.
+ */
+export class ModelProviderError extends Error {
+  readonly code: ModelErrorCode;
+  constructor(code: ModelErrorCode) {
+    super(MODEL_ERROR_MESSAGES[code] ?? MODEL_ERROR_MESSAGES.unavailable);
+    this.name = "ModelProviderError";
+    this.code = MODEL_ERROR_CODES.includes(code) ? code : "unavailable";
   }
 }
 
@@ -236,26 +294,173 @@ export function assertModelRequest(value: unknown): ModelRequest {
   return { messages, tools };
 }
 
-/** Strictly checks what a provider returned: final text, or 1 to 8 tool calls whose arguments are in the safe two-way form. */
+/** A recipient or model id: a plain identifier. Never a URL, a key, or free text. */
+const META_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+/** Whether a recipient id is a plain identifier. Configuration uses the same rule the guard applies to a response. */
+export const isRecipientId = (value: string): boolean => META_ID.test(value);
+const MAX_TOKEN_COUNT = 1_000_000_000;
+
+function tokenCount(value: unknown, where: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > MAX_TOKEN_COUNT) return failResponse(`${where} must be a whole number of tokens.`);
+  return value;
+}
+
+function responseMeta(value: unknown): ModelResponseMeta {
+  const m = object(value, "response.meta", ["recipient", "model", "inputTokens", "outputTokens"], failResponse);
+  if (typeof m.recipient !== "string" || !META_ID.test(m.recipient)) return failResponse("response.meta.recipient must be a plain identifier.");
+  if (typeof m.model !== "string" || !META_ID.test(m.model)) return failResponse("response.meta.model must be a plain identifier.");
+  const inputTokens = tokenCount(m.inputTokens, "response.meta.inputTokens");
+  const outputTokens = tokenCount(m.outputTokens, "response.meta.outputTokens");
+  return { recipient: m.recipient, model: m.model, ...(inputTokens === undefined ? {} : { inputTokens }), ...(outputTokens === undefined ? {} : { outputTokens }) };
+}
+
+/** Strictly checks what a provider returned: final text, or 1 to 8 tool calls whose arguments are in the safe two-way form, and optional metadata about who answered. */
 export function assertModelResponse(value: unknown): ModelResponse {
   const kind = isPlainObject(value) ? value.kind : undefined;
   if (kind === "text") {
-    const response = object(value, "response", ["kind", "text"], failResponse);
-    return { kind, text: text(response.text, "response.text", MAX_MESSAGE_CHARS, failResponse) };
+    const response = object(value, "response", ["kind", "text", "meta"], failResponse);
+    const answer = { kind: "text" as const, text: text(response.text, "response.text", MAX_MESSAGE_CHARS, failResponse) };
+    return response.meta === undefined ? answer : { ...answer, meta: responseMeta(response.meta) };
   }
   if (kind === "tool_calls") {
-    const response = object(value, "response", ["kind", "calls"], failResponse);
+    const response = object(value, "response", ["kind", "calls", "meta"], failResponse);
     const calls = toolCalls(response.calls, "response.calls", MAX_TOOL_CALLS_PER_RESPONSE, failResponse);
     if (calls.length === 0) return failResponse("response.calls must contain at least one tool call.");
-    return { kind, calls };
+    const answer = { kind: "tool_calls" as const, calls };
+    return response.meta === undefined ? answer : { ...answer, meta: responseMeta(response.meta) };
   }
   return failResponse('response.kind must be "text" or "tool_calls".');
 }
 
+// ---------------------------------------------------------------------
+// Limits on a call: timeout, run budget, cancellation, output size, recipients
+// ---------------------------------------------------------------------
+
+/** No single model call may be allowed longer than this, whatever is configured. */
+export const MAX_MODEL_TIMEOUT_MS = 120_000;
+
+/** What happened on one model call, for the audit. Metadata only: no prompt, no answer, no argument. */
+export type ModelCallInfo = {
+  recipient: string | null;
+  model: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  durationMs: number;
+  outcome: "ok" | ModelErrorCode | "invalid_request" | "error";
+};
+
+export type ModelGuardPolicy = {
+  /** The longest one call may take. */
+  timeoutMs?: number;
+  /** The end of the total budget for a whole run, as a clock time in milliseconds. A call is never allowed past it. */
+  deadlineAt?: number;
+  /** The longest answer accepted, in characters (tool-call arguments count). Longer is refused, not cut. */
+  maxOutputChars?: number;
+  /** When set, only these recipients may answer. A response from any other, or one that names none, fails closed. */
+  approvedRecipients?: readonly string[];
+  /** Cancels the call from outside. */
+  signal?: AbortSignal;
+  /** Called once per call, success or failure, with metadata only. */
+  onCall?: (info: ModelCallInfo) => void;
+};
+
+function checkPolicy(policy: ModelGuardPolicy): void {
+  const whole = (value: number | undefined, name: string, max: number) => {
+    if (value !== undefined && !(Number.isSafeInteger(value) && value >= 1 && value <= max)) throw new RangeError(`${name} must be a whole number from 1 to ${max}.`);
+  };
+  whole(policy.timeoutMs, "timeoutMs", MAX_MODEL_TIMEOUT_MS);
+  whole(policy.maxOutputChars, "maxOutputChars", MAX_MESSAGE_CHARS);
+  if (policy.deadlineAt !== undefined && !Number.isFinite(policy.deadlineAt)) throw new RangeError("deadlineAt must be a clock time.");
+  if (policy.approvedRecipients !== undefined && !policy.approvedRecipients.every((id) => typeof id === "string" && META_ID.test(id))) {
+    throw new RangeError("approvedRecipients must be a list of plain identifiers.");
+  }
+}
+
 /**
- * Wraps any adapter so that an invalid request never reaches it and an invalid answer never leaves it. A provider's own
- * failure is not caught: it propagates to whoever is orchestrating.
+ * Runs one call under its limits. The adapter is handed an AbortSignal and told its deadline, but the deadline is enforced HERE by
+ * racing the call, so an adapter that ignores the signal is still cut off. Nothing is left running: the timer and the listener are
+ * always removed.
  */
-export function withModelGuard(inner: ModelAdapter): ModelAdapter {
-  return { complete: async (request) => assertModelResponse(await inner.complete(assertModelRequest(request))) };
+async function callWithLimits(inner: ModelAdapter, request: ModelRequest, policy: ModelGuardPolicy): Promise<unknown> {
+  if (policy.signal?.aborted) throw new ModelProviderError("aborted");
+  const budgetLeft = policy.deadlineAt === undefined ? Number.POSITIVE_INFINITY : policy.deadlineAt - Date.now();
+  if (budgetLeft <= 0) throw new ModelProviderError("budget_exceeded");
+  const perCall = policy.timeoutMs ?? Number.POSITIVE_INFINITY;
+  const limit = Math.min(perCall, budgetLeft);
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+  const stop = new Promise<never>((_resolve, reject) => {
+    if (Number.isFinite(limit)) {
+      timer = setTimeout(() => {
+        // Reject with the typed error FIRST: an adapter that reacts to the abort by rejecting itself must not win the race.
+        reject(new ModelProviderError(budgetLeft < perCall ? "budget_exceeded" : "timeout"));
+        controller.abort();
+      }, limit);
+    }
+    if (policy.signal) {
+      onAbort = () => {
+        reject(new ModelProviderError("aborted"));
+        controller.abort();
+      };
+      policy.signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
+  try {
+    const options: ModelCallOptions = {
+      signal: controller.signal,
+      ...(Number.isFinite(limit) ? { timeoutMs: Math.ceil(limit) } : {}),
+      ...(policy.maxOutputChars === undefined ? {} : { maxOutputChars: policy.maxOutputChars }),
+    };
+    return await Promise.race([inner.complete(request, options), stop]);
+  } finally {
+    clearTimeout(timer);
+    if (policy.signal && onAbort) policy.signal.removeEventListener("abort", onAbort);
+  }
+}
+
+const outcomeOf = (error: unknown): ModelCallInfo["outcome"] =>
+  error instanceof ModelProviderError ? error.code : error instanceof ModelRequestError ? "invalid_request" : error instanceof ModelResponseError ? "invalid_response" : "error";
+
+/**
+ * Wraps any adapter so that an invalid request never reaches it and an invalid answer never leaves it, and so that a call is
+ * bounded: a per-call timeout, a total run deadline and an outside AbortSignal are enforced whether or not the adapter honours
+ * them; an answer longer than the limit is refused; and, when an allow-list is set, an answer from any other recipient (or from
+ * none) fails closed BEFORE its content is used. Every one of those is a typed ModelProviderError. A provider's own other failure
+ * is not caught: it propagates to whoever is orchestrating, which sanitises it.
+ */
+export function withModelGuard(inner: ModelAdapter, policy: ModelGuardPolicy = {}): ModelAdapter {
+  checkPolicy(policy);
+  return {
+    complete: async (request) => {
+      const started = Date.now();
+      const info: ModelCallInfo = { recipient: null, model: null, inputTokens: null, outputTokens: null, durationMs: 0, outcome: "ok" };
+      try {
+        const raw = await callWithLimits(inner, assertModelRequest(request), policy);
+        // An oversized text is refused as such even when it is also over the generic limit.
+        if (policy.maxOutputChars !== undefined && isPlainObject(raw) && raw.kind === "text" && typeof raw.text === "string" && raw.text.length > policy.maxOutputChars) {
+          throw new ModelProviderError("output_too_large");
+        }
+        const response = assertModelResponse(raw);
+        info.recipient = response.meta?.recipient ?? null;
+        info.model = response.meta?.model ?? null;
+        info.inputTokens = response.meta?.inputTokens ?? null;
+        info.outputTokens = response.meta?.outputTokens ?? null;
+        if (policy.approvedRecipients !== undefined && !(response.meta !== undefined && policy.approvedRecipients.includes(response.meta.recipient))) {
+          throw new ModelProviderError("recipient_not_approved");
+        }
+        if (policy.maxOutputChars !== undefined && response.kind === "tool_calls" && response.calls.reduce((sum, c) => sum + JSON.stringify(c.arguments).length, 0) > policy.maxOutputChars) {
+          throw new ModelProviderError("output_too_large");
+        }
+        return response;
+      } catch (error) {
+        info.outcome = outcomeOf(error);
+        throw error;
+      } finally {
+        info.durationMs = Date.now() - started;
+        policy.onCall?.({ ...info });
+      }
+    },
+  };
 }

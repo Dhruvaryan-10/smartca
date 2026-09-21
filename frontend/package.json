@@ -13,7 +13,7 @@
     "rag:ingest": "tsx scripts/rag-ingest.ts",
     "rag:eval": "tsx scripts/rag-eval.ts",
     "test": "tsx --test tests/**/*.test.ts",
-    "test:assistant-pure": "tsx --test tests/assistant-answer.test.ts tests/assistant-answer-eval.test.ts tests/assistant-answer-hardening.test.ts tests/assistant-ask.test.ts tests/assistant-errors.test.ts tests/assistant-hermetic.test.ts tests/assistant-model.test.ts tests/assistant-orchestrator.test.ts",
+    "test:assistant-pure": "tsx --test tests/assistant-answer.test.ts tests/assistant-answer-eval.test.ts tests/assistant-answer-hardening.test.ts tests/assistant-ask.test.ts tests/assistant-config.test.ts tests/assistant-errors.test.ts tests/assistant-hermetic.test.ts tests/assistant-model.test.ts tests/assistant-model-limits.test.ts tests/assistant-orchestrator.test.ts tests/assistant-synthetic.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },

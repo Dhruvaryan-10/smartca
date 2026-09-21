@@ -12,11 +12,14 @@
 //   - The userId is the caller's. It is never an argument the model or the person's words can change.
 //   - An unexpected failure (a database error in a tool, a provider's own error) leaves as a sanitised AssistantFailure: a code,
 //     a class name and a database code, never a message, a statement, a bound parameter or a raw tool result. Typed errors that
-//     mean something (OrchestratorError, NotAuthenticatedError, an AssistantFailure from the tools) pass through unchanged.
+//     mean something (OrchestratorError, NotAuthenticatedError, an AssistantFailure from the tools, and a ModelProviderError, which
+//     has only a code and a fixed message) pass through unchanged.
+//   - The model calls run under `modelPolicy` when the caller supplies one: a per-call timeout, a total run budget, an output-size
+//     limit and an approved-recipient allow-list. None is set by default; services/assistant/synthetic.ts sets all of them.
 // It logs nothing.
 import { OrchestratorError, runAssistant } from "./orchestrator";
-import type { OrchestratorOptions } from "./orchestrator";
-import { MAX_MESSAGE_CHARS } from "./model";
+import type { ModelRunPolicy, OrchestratorOptions } from "./orchestrator";
+import { MAX_MESSAGE_CHARS, ModelProviderError } from "./model";
 import type { ModelAdapter } from "./model";
 import { AnswerInputError, buildAnswer } from "@/lib/assistant/answer";
 import type { Answer, ToolRecord } from "@/lib/assistant/answer";
@@ -37,6 +40,8 @@ export type AskDeps = {
   model: ModelAdapter;
   /** The tool set. Defaults to the real one; tests inject stubs. Code's choice, never the model's. */
   tools?: OrchestratorOptions["tools"];
+  /** Timeout, total run budget, output size and approved recipients for the model calls (see ModelRunPolicy). None is set by default. */
+  modelPolicy?: ModelRunPolicy;
 };
 
 function readInput(input: unknown): { userId: string; userMessages: string[] } {
@@ -61,7 +66,7 @@ function readInput(input: unknown): { userId: string; userMessages: string[] } {
 
 /** Typed errors keep their meaning; anything else is reduced to a code and a class name. */
 function boundary(error: unknown): Error {
-  if (error instanceof OrchestratorError || error instanceof NotAuthenticatedError || error instanceof AssistantFailure || error instanceof AnswerInputError) return error;
+  if (error instanceof OrchestratorError || error instanceof NotAuthenticatedError || error instanceof AssistantFailure || error instanceof AnswerInputError || error instanceof ModelProviderError) return error;
   return new AssistantFailure("unexpected_failure", error);
 }
 
@@ -74,6 +79,7 @@ export async function askAssistant(input: AskInput, deps: AskDeps): Promise<Answ
       {
         model: deps.model,
         ...(deps.tools === undefined ? {} : { tools: deps.tools }),
+        ...(deps.modelPolicy === undefined ? {} : { modelPolicy: deps.modelPolicy }),
         // A deep copy of each full result, for buildAnswer alone: it is never logged, returned or put in an error.
         onToolResult: (record) => {
           records.push({ round: record.round, callId: record.callId, tool: record.tool, result: record.result });

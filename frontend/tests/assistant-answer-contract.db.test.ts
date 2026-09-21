@@ -17,6 +17,7 @@ import { buildAnswer } from "../lib/assistant/answer";
 import type { ToolRecord } from "../lib/assistant/answer";
 import { askAssistant } from "../services/assistant/ask";
 import { createAssistantTools } from "../services/assistant/tools";
+import { SYNTHETIC_CALC_ARGS, SYNTHETIC_SEARCH_ARGS, SYNTHETIC_SIMULATE_ARGS, SYNTHETIC_TAX_BODY, SYNTHETIC_USER_ID, createSyntheticTools } from "../services/assistant/synthetic-tools";
 import type { ToolResult } from "../services/assistant/tools";
 import type { TaxRetrievalResult } from "../services/tax-retrieval";
 import { calcRecord, calcResult, compareRecord, evidence as helperEvidence, inr, searchRecord, simulateRecord, summaryRecord, transactionsRecord } from "./helpers-answer";
@@ -165,4 +166,24 @@ test("end to end with the REAL tools: orchestrator (real tool set loaded on dema
   const tampered = await askAssistant({ userId: USER, userMessages: ["What is my tax on 15 lakh with 80C?"] }, { model: scriptedModel(toolCalls(call("c1", "calculate_tax", args)), text(`Under the old regime your tax is ${inr(old.totalTaxPaise - 100)}.`)) });
   assert.equal(tampered.state, "withheld");
   assert.deepEqual((tampered.facts.taxValues[0].payload as { result: unknown }).result, old, "the tool's value is untouched by what the model said");
+});
+
+test("6K: the SYNTHETIC tool set returns results with the real tools' shape, so synthetic mode exercises the answer layer on the real contract", async () => {
+  const results = await real();
+  const synthetic = createSyntheticTools();
+  const served: Record<string, ToolResult<unknown>> = {
+    search_tax_law: await synthetic.search_tax_law(SYNTHETIC_USER_ID, SYNTHETIC_SEARCH_ARGS),
+    get_financial_summary: await synthetic.get_financial_summary(SYNTHETIC_USER_ID, {}),
+    calculate_tax: await synthetic.calculate_tax(SYNTHETIC_USER_ID, SYNTHETIC_CALC_ARGS),
+    compare_tax_regimes: await synthetic.compare_tax_regimes(SYNTHETIC_USER_ID, SYNTHETIC_TAX_BODY),
+    simulate_tax: await synthetic.simulate_tax(SYNTHETIC_USER_ID, SYNTHETIC_SIMULATE_ARGS),
+  };
+  for (const [tool, result] of Object.entries(served)) {
+    assert.equal(result.status, "ok", `${tool}: the synthetic tool serves its fixture`);
+    const realResult = (results[tool as keyof typeof results] as { result: unknown }).result;
+    assert.ok(sameShape(shapeOf((result as { result: unknown }).result), shapeOf(realResult)), `${tool}: the synthetic result no longer has the real tool's shape. Update services/assistant/synthetic-tools.ts with the tool.`);
+  }
+  // query_transactions is not enabled in synthetic mode: a typed refusal, as a real refusal would be.
+  const refused = await synthetic.query_transactions(SYNTHETIC_USER_ID, {});
+  assert.deepEqual([refused.status, refused.status === "refused" && refused.reason], ["refused", "invalid_arguments"]);
 });

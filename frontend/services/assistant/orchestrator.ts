@@ -24,7 +24,7 @@
 //     (ask.ts) does the same for anything else, including a provider's error, which can quote a request or a credential. A
 //     caller that uses runAssistant directly must not log or return such an error as it is.
 import { MAX_MESSAGE_CHARS, ModelRequestError, ModelResponseError, withModelGuard } from "./model";
-import type { ModelAdapter, ModelMessage, ModelToolCall, ModelToolDeclaration } from "./model";
+import type { ModelAdapter, ModelGuardPolicy, ModelMessage, ModelToolCall, ModelToolDeclaration } from "./model";
 // Only the tool NAMES are needed at load time, and they come from a module with no imports. The real tool set (which imports the
 // database) is loaded by the one line in runAssistant that needs it, and only when the caller did not supply its own tools.
 import { ASSISTANT_TOOL_NAMES } from "@/lib/assistant/tool-contract";
@@ -211,8 +211,18 @@ export class OrchestratorError extends Error {
 /** One tool call's full result, as the tool returned it. For SERVER-SIDE code only (see OrchestratorOptions.onToolResult). */
 export type ToolResultRecord = { round: number; callId: string; tool: ToolName; result: ToolResult<unknown> };
 
+/**
+ * Limits on the MODEL calls of one run; every field is optional and none is set by default. `runBudgetMs` is the total time
+ * for the whole run (model calls and tool calls together): no model call is allowed to start, or to continue, past it. The
+ * rest are the model guard's own limits (per-call timeout, output size, approved recipients, an outside AbortSignal, and a
+ * metadata-only per-call callback). A limit that is hit is a typed ModelProviderError, passed on as it is.
+ */
+export type ModelRunPolicy = Omit<ModelGuardPolicy, "deadlineAt"> & { runBudgetMs?: number };
+
 export type OrchestratorOptions = {
   model: ModelAdapter;
+  /** Timeout, run budget, output size and approved recipients for the model calls. See ModelRunPolicy. */
+  modelPolicy?: ModelRunPolicy;
   /** The tool set. Defaults to the real one; tests inject stubs. It is code's choice, never the model's. */
   tools?: typeof assistantTools;
   /**
@@ -267,7 +277,9 @@ export async function runAssistant(input: { userId: string; messages: Conversati
   const turns = readTurns(input.messages);
 
   const tools = options.tools ?? (await import("./tools")).assistantTools;
-  const model = withModelGuard(options.model);
+  const { runBudgetMs, ...limits } = options.modelPolicy ?? {};
+  if (runBudgetMs !== undefined && !(Number.isSafeInteger(runBudgetMs) && runBudgetMs >= 1)) throw new RangeError("runBudgetMs must be a whole number of milliseconds.");
+  const model = withModelGuard(options.model, { ...limits, ...(runBudgetMs === undefined ? {} : { deadlineAt: Date.now() + runBudgetMs }) });
   const messages: ModelMessage[] = [{ role: "system", content: ORCHESTRATOR_SYSTEM_PROMPT }, ...turns];
   const activity: ToolActivity[] = [];
   const evidenceIds: string[] = [];
