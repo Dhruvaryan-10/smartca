@@ -294,8 +294,12 @@ export function assertModelRequest(value: unknown): ModelRequest {
   return { messages, tools };
 }
 
-/** A recipient or model id: a plain identifier. Never a URL, a key, or free text. */
-const META_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+/**
+ * A recipient or model id: a plain identifier. Never a URL, a key, or free text. The canonical rule: lib/assistant/authorization.ts
+ * keeps an identical copy (it may import only pure lib/assistant modules, and this file imports nothing), and a test pins that the two
+ * patterns are exactly equal.
+ */
+export const META_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 /** Whether a recipient id is a plain identifier. Configuration uses the same rule the guard applies to a response. */
 export const isRecipientId = (value: string): boolean => META_ID.test(value);
 const MAX_TOKEN_COUNT = 1_000_000_000;
