@@ -96,6 +96,13 @@ function serve<T>(tool: ToolName, userId: string, work: () => ToolResult<T>): To
   }
 }
 
+/**
+ * The five tools synthetic mode serves, and so the only ones it declares to the model (services/assistant/synthetic.ts passes this
+ * as allowedTools). query_transactions is left out: row-level ledger data is not served here. Its refusal below stays anyway, as
+ * a second line of defence.
+ */
+export const SYNTHETIC_TOOL_NAMES: readonly ToolName[] = ["search_tax_law", "get_financial_summary", "calculate_tax", "compare_tax_regimes", "simulate_tax"];
+
 export function createSyntheticTools(): ReturnType<typeof createAssistantTools> {
   const tools = {
     search_tax_law: async (userId: string, args: unknown) =>

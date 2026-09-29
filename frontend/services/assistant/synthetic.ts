@@ -11,6 +11,8 @@
 //   - it refuses any message that does not begin with SYNTHETIC_MESSAGE_PREFIX, so real chat text cannot be sent by accident. (A
 //     person can still type the prefix in front of real text: this stops accidents, not deliberate misuse.)
 //   - a configuration whose mode is anything but "synthetic" fails closed here too, even if it was built by hand.
+//   - it declares only the tools synthetic mode serves (SYNTHETIC_TOOL_NAMES): query_transactions is never offered to the model, and
+//     a call to it is refused (unknown_tool) before any tool in its batch runs.
 import { askAssistant } from "./ask";
 import type { AskInput } from "./ask";
 import { AssistantConfigError, policyFromConfig } from "./config";
@@ -18,7 +20,7 @@ import type { AssistantConfig } from "./config";
 import type { ModelCallInfo } from "./model";
 import { createSyntheticModel } from "./synthetic-model";
 import type { SyntheticScenario } from "./synthetic-model";
-import { SYNTHETIC_USER_ID, createSyntheticTools } from "./synthetic-tools";
+import { SYNTHETIC_TOOL_NAMES, SYNTHETIC_USER_ID, createSyntheticTools } from "./synthetic-tools";
 import type { Answer } from "@/lib/assistant/answer";
 
 /** Every message in synthetic mode must begin with this. */
@@ -58,6 +60,7 @@ export async function askSynthetic(config: AssistantConfig, input: AskInput, opt
   return askAssistant(input, {
     model: createSyntheticModel({ scenario: options.scenario, modelId: config.modelId, secret: config.apiKey }),
     tools: createSyntheticTools(),
+    allowedTools: SYNTHETIC_TOOL_NAMES,
     modelPolicy: { ...policyFromConfig(config), ...(options.onModelCall === undefined ? {} : { onCall: options.onModelCall }) },
   });
 }

@@ -15,14 +15,15 @@ import assert from "node:assert/strict";
 import { askSynthetic, SYNTHETIC_MESSAGE_PREFIX, SyntheticModeError } from "../services/assistant/synthetic";
 import { SYNTHETIC_MODEL_ID, SYNTHETIC_RECIPIENT, SYNTHETIC_SCENARIOS, createSyntheticModel } from "../services/assistant/synthetic-model";
 import type { SyntheticScenario } from "../services/assistant/synthetic-model";
-import { SYNTHETIC_CALC_ARGS, SYNTHETIC_USER_ID, createSyntheticTools } from "../services/assistant/synthetic-tools";
+import { SYNTHETIC_CALC_ARGS, SYNTHETIC_TOOL_NAMES, SYNTHETIC_USER_ID, createSyntheticTools } from "../services/assistant/synthetic-tools";
 import { AssistantConfigError, readAssistantConfig } from "../services/assistant/config";
 import { ModelProviderError, assertModelResponse } from "../services/assistant/model";
-import type { ModelCallInfo, ModelRequest } from "../services/assistant/model";
+import type { ModelAdapter, ModelCallInfo, ModelRequest } from "../services/assistant/model";
+import { OrchestratorError, runAssistant } from "../services/assistant/orchestrator";
 import { AssistantFailure } from "../lib/assistant/failure";
 import { buildAnswer } from "../lib/assistant/answer";
 import type { Answer } from "../lib/assistant/answer";
-import { COMPARISON_NOTICE } from "../lib/assistant/tool-contract";
+import { ASSISTANT_TOOL_NAMES, COMPARISON_NOTICE } from "../lib/assistant/tool-contract";
 import { NotAuthenticatedError } from "../services/errors";
 
 const FRONTEND = path.resolve(__dirname, "..");
@@ -116,11 +117,34 @@ test("honest scenarios run end to end through the synthetic tools and are answer
   assert.equal(ledger.shape, "summary");
   assert.deepEqual([(ledger.payload as { incomePaise: number }).incomePaise, (ledger.payload as { expensePaise: number }).expensePaise], [5_000_000, 1_500_000]);
   assert.deepEqual((ledger.payload as { categories: unknown[] }).categories, [], "category names (ledger free text) are not served");
+});
 
-  const disabled = await run("disabled-tool");
-  assert.equal(disabled.state, "answered");
-  assert.deepEqual(disabled.facts.refusals.map((r) => r.reason), ["invalid_arguments"]);
-  assert.match(disabled.facts.refusals[0].message, /not enabled in synthetic mode/, "row-level ledger data is not served");
+// --- the tool gate: only the five served tools are declared -----------------------------------------------------------------
+
+test("synthetic mode declares exactly the five tools it serves: query_transactions is never offered to the model", async () => {
+  assert.deepEqual([...SYNTHETIC_TOOL_NAMES], ASSISTANT_TOOL_NAMES.filter((name) => name !== "query_transactions"));
+
+  const inner = createSyntheticModel({ scenario: "plain" });
+  const requests: ModelRequest[] = [];
+  const model: ModelAdapter = { complete: async (request) => { requests.push(structuredClone(request)); return inner.complete(request); } };
+  await runAssistant({ userId: SYNTHETIC_USER_ID, messages: INPUT.userMessages.map((content) => ({ role: "user" as const, content })) }, { model, tools: createSyntheticTools(), allowedTools: SYNTHETIC_TOOL_NAMES });
+  assert.deepEqual(requests[0].tools?.map((t) => t.name), [...SYNTHETIC_TOOL_NAMES]);
+});
+
+test("a synthetic model that calls query_transactions anyway is refused by the gate, before any tool runs", async () => {
+  const error = await run("disabled-tool").then(
+    () => assert.fail("expected the gate to refuse"),
+    (e: unknown) => e,
+  );
+  assert.ok(error instanceof OrchestratorError, String(error));
+  assert.equal(error.code, "unknown_tool");
+  assert.match(error.message, /not available in this run: "query_transactions"/);
+  assert.deepEqual(error.toolActivity, [], "nothing ran");
+
+  // Defence in depth: the synthetic tool itself still refuses, if it were ever reached.
+  const direct = await createSyntheticTools().query_transactions(SYNTHETIC_USER_ID, {});
+  assert.equal(direct.status, "refused");
+  assert.match(direct.status === "refused" ? direct.message : "", /not enabled in synthetic mode/, "row-level ledger data is not served");
 });
 
 test("scenarios that model a MISBEHAVING model are withheld by the answer layer, and the tool facts still stand", async () => {
@@ -281,6 +305,7 @@ test("the synthetic modules contain no network, environment, file, logging, prov
 test("synthetic mode passes its OWN tools explicitly, so it can never fall back to the real ones", () => {
   const source = strip(fs.readFileSync(path.join(FRONTEND, "services/assistant/synthetic.ts"), "utf8"));
   assert.match(source, /tools:\s*createSyntheticTools\(\)/, "an explicit tool set");
+  assert.match(source, /allowedTools:\s*SYNTHETIC_TOOL_NAMES/, "and an explicit tool gate");
   assert.equal((source.match(/askAssistant\(/g) ?? []).length, 1);
   assert.doesNotMatch(source, /assistantTools|createAssistantTools|from\s+["']\.\/tools["']/, "the real tool set is not referenced");
   assert.doesNotMatch(strip(fs.readFileSync(path.join(FRONTEND, "services/assistant/synthetic-tools.ts"), "utf8")), /^import\s+(?!type\b)[^;]*from\s+["']\.\/tools["']/m, "and synthetic-tools imports the real tools' TYPES only");
