@@ -66,11 +66,15 @@ export class Secret {
   }
 }
 
+/**
+ * The configuration. `env: "external"` exists as a TYPE only, for services/assistant/external.ts: readAssistantConfig never produces it
+ * (any ASSISTANT_ENV but "synthetic" still fails closed), so no environment can reach an external model through this reader.
+ */
 export type AssistantConfig =
   | { enabled: false }
   | {
       enabled: true;
-      env: "synthetic";
+      env: "synthetic" | "external";
       endpoint: string;
       apiKey: Secret;
       modelId: string;

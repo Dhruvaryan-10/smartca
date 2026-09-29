@@ -31,6 +31,7 @@ const PURE_SOURCE = [
   "services/assistant/synthetic.ts",
   "services/assistant/synthetic-model.ts",
   "services/assistant/synthetic-tools.ts",
+  "services/assistant/external.ts",
 ];
 /** Pure test fixtures and tests: none may need a database to LOAD. */
 const PURE_TESTS = [
@@ -50,6 +51,7 @@ const PURE_TESTS = [
   "tests/assistant-authorization.test.ts",
   "tests/assistant-egress-filter.test.ts",
   "tests/assistant-access-plan.test.ts",
+  "tests/assistant-external.test.ts",
   "tests/assistant-egress-disclosure.test.ts",
 ];
 const PURE_HELPERS = ["tests/helpers-answer.ts", "tests/helpers-errors.ts", "tests/helpers-orchestrator.ts"];
