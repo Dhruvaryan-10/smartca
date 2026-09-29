@@ -226,6 +226,12 @@ export type OrchestratorOptions = {
   /** The tool set. Defaults to the real one; tests inject stubs. It is code's choice, never the model's. */
   tools?: typeof assistantTools;
   /**
+   * Which of the six tools this run may use. Defaults to all six. Only these are declared to the model, and a call to any other
+   * is refused (unknown_tool) before anything in its batch runs. It is code's choice, never the model's: a list that is empty,
+   * repeats a name or names an unknown tool is a RangeError.
+   */
+  allowedTools?: readonly ToolName[];
+  /**
    * Opt-in, server-side: called once per tool call, in order, with a DEEP COPY of the full result. The returned result and
    * every error stay metadata-only (Phase 6G), so the answer layer, which has to ground an answer in what the tools really
    * returned, gets the results here instead. The copy means a callback can change nothing the model receives. A callback
@@ -251,6 +257,19 @@ const VALIDATORS: Record<ToolName, (args: unknown) => unknown> = {
   simulate_tax: readSimulateTaxArgs,
 };
 
+/** The caller's tool gate, checked: undefined means all six. */
+function readAllowedTools(allowed: unknown): ReadonlySet<string> {
+  if (allowed === undefined) return ALLOWED_TOOLS;
+  if (!Array.isArray(allowed) || allowed.length < 1) throw new RangeError("allowedTools must be a list of at least one tool name.");
+  const set = new Set<string>();
+  for (const name of allowed) {
+    if (typeof name !== "string" || !ALLOWED_TOOLS.has(name)) throw new RangeError(`allowedTools names a tool that does not exist: "${String(name)}".`);
+    if (set.has(name)) throw new RangeError(`allowedTools names "${name}" twice.`);
+    set.add(name);
+  }
+  return set;
+}
+
 function readTurns(messages: unknown): ConversationTurn[] {
   const bad = (message: string) => new OrchestratorError("invalid_input", message);
   if (!Array.isArray(messages) || messages.length < 1 || messages.length > MAX_HISTORY_TURNS) throw bad(`messages must be a list of 1 to ${MAX_HISTORY_TURNS} turns.`);
@@ -275,6 +294,8 @@ export async function runAssistant(input: { userId: string; messages: Conversati
   const userId = input.userId;
   if (typeof userId !== "string" || userId.trim() === "") throw new NotAuthenticatedError();
   const turns = readTurns(input.messages);
+  const allowed = readAllowedTools(options.allowedTools);
+  const declared = ASSISTANT_TOOL_DEFINITIONS.filter((definition) => allowed.has(definition.name));
 
   const tools = options.tools ?? (await import("./tools")).assistantTools;
   const { runBudgetMs, ...limits } = options.modelPolicy ?? {};
@@ -288,7 +309,7 @@ export async function runAssistant(input: { userId: string; messages: Conversati
   for (let round = 1; round <= MAX_ROUNDS; round++) {
     let response;
     try {
-      response = await model.complete({ messages: [...messages], tools: ASSISTANT_TOOL_DEFINITIONS });
+      response = await model.complete({ messages: [...messages], tools: declared });
     } catch (error) {
       if (error instanceof ModelResponseError) throw stop("invalid_model_response", error.message);
       if (error instanceof ModelRequestError) throw stop("invalid_model_request", error.message);
@@ -304,7 +325,7 @@ export async function runAssistant(input: { userId: string; messages: Conversati
     }
 
     // Check the WHOLE batch before running any of it.
-    const checked = response.calls.map((toolCall) => checkCall(toolCall, stop));
+    const checked = response.calls.map((toolCall) => checkCall(toolCall, allowed, stop));
 
     messages.push({ role: "assistant", content: "", toolCalls: response.calls });
     for (const { call, name, args } of checked) {
@@ -333,9 +354,10 @@ function evidenceIdsOf(name: ToolName, result: ToolResult<unknown>): string[] {
   return found.flatMap((item) => (typeof item?.evidenceId === "string" ? [item.evidenceId] : []));
 }
 
-/** One call: a known tool, arguments that parsed as a JSON object, and arguments that pass that tool's own validator. */
-function checkCall(call: ModelToolCall, stop: (code: OrchestratorErrorCode, message: string) => OrchestratorError) {
+/** One call: a known tool this run allows, arguments that parsed as a JSON object, and arguments that pass that tool's own validator. */
+function checkCall(call: ModelToolCall, allowed: ReadonlySet<string>, stop: (code: OrchestratorErrorCode, message: string) => OrchestratorError) {
   if (!ALLOWED_TOOLS.has(call.name)) throw stop("unknown_tool", `The model asked for a tool that does not exist: "${call.name}".`);
+  if (!allowed.has(call.name)) throw stop("unknown_tool", `The model asked for a tool that is not available in this run: "${call.name}".`);
   const name = call.name as ToolName;
   if (call.arguments.kind === "malformed") throw stop("malformed_tool_arguments", `The arguments for ${name} were not a JSON object: ${call.arguments.error}`);
   try {

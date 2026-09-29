@@ -40,6 +40,7 @@ const PURE_TESTS = [
   "tests/assistant-model.test.ts",
   "tests/assistant-orchestrator.test.ts",
   "tests/assistant-ask.test.ts",
+  "tests/assistant-tool-gate.test.ts",
 ];
 const PURE_HELPERS = ["tests/helpers-answer.ts", "tests/helpers-errors.ts", "tests/helpers-orchestrator.ts"];
 
