@@ -10,7 +10,9 @@
 //     else, and every call in a batch is checked (name, JSON, the assistant's own argument validators) before ANY of them
 //     runs. There is no write tool, no database handle, and no arbitrary service function anywhere in reach.
 //   - The loop is bounded: at most MAX_ROUNDS model calls and MAX_TOOL_CALLS tool calls in total, with no retry.
-//   - A tool's answer, or its typed refusal, goes back to the model byte for byte. The RETURNED result, and any error, carry
+//   - A tool's answer, or its typed refusal, goes back to the model byte for byte, unless the caller sets `visibleClasses`: then the
+//     model is sent only the fields whose egress class is shown (lib/assistant/egress-filter.ts, classified by
+//     ASSISTANT_EGRESS_INVENTORY), and a field the inventory does not classify stops the run. The RETURNED result, and any error, carry
 //     only metadata about it (tool, call id, round, outcome, reason, evidence ids), never the result or the arguments. The one
 //     exception is the opt-in `onToolResult` callback (see OrchestratorOptions): server-side code that has to ground an answer
 //     in what the tools really returned receives a deep copy of each full result there, and must never log it, return it or put
@@ -29,6 +31,8 @@ import type { ModelAdapter, ModelGuardPolicy, ModelMessage, ModelToolCall, Model
 // database) is loaded by the one line in runAssistant that needs it, and only when the caller did not supply its own tools.
 import { ASSISTANT_TOOL_NAMES } from "@/lib/assistant/tool-contract";
 import type { ToolName } from "@/lib/assistant/tool-contract";
+import { EgressFilterError, filterToolResult, readEgressClasses } from "@/lib/assistant/egress-filter";
+import type { EgressClasses } from "@/lib/assistant/egress-filter";
 import type { assistantTools, SearchTaxLawResult, ToolResult } from "./tools";
 import { NotAuthenticatedError } from "../errors";
 import {
@@ -193,6 +197,7 @@ export type OrchestratorErrorCode =
   | "malformed_tool_arguments"
   | "invalid_tool_arguments"
   | "tool_result_too_large"
+  | "tool_result_unclassified"
   | "round_limit_exceeded"
   | "tool_call_limit_exceeded";
 
@@ -231,6 +236,14 @@ export type OrchestratorOptions = {
    * repeats a name or names an unknown tool is a RangeError.
    */
   allowedTools?: readonly ToolName[];
+  /**
+   * Which classes of data (user_free_text, user_financial_data, tax_corpus_text, system_value) the MODEL may be shown of each tool
+   * result. Unset, the model is sent every result whole, as before. Set, each result is filtered by its egress-inventory classes before
+   * it is serialized for the model: a forbidden field never reaches it, and a field the inventory does not classify stops the run
+   * (tool_result_unclassified). `onToolResult` still receives the raw result. Code's choice, never the model's; it must state all four
+   * classes (a RangeError otherwise).
+   */
+  visibleClasses?: EgressClasses;
   /**
    * Opt-in, server-side: called once per tool call, in order, with a DEEP COPY of the full result. The returned result and
    * every error stay metadata-only (Phase 6G), so the answer layer, which has to ground an answer in what the tools really
@@ -295,6 +308,7 @@ export async function runAssistant(input: { userId: string; messages: Conversati
   if (typeof userId !== "string" || userId.trim() === "") throw new NotAuthenticatedError();
   const turns = readTurns(input.messages);
   const allowed = readAllowedTools(options.allowedTools);
+  const visible = options.visibleClasses === undefined ? null : readEgressClasses(options.visibleClasses);
   const declared = ASSISTANT_TOOL_DEFINITIONS.filter((definition) => allowed.has(definition.name));
 
   const tools = options.tools ?? (await import("./tools")).assistantTools;
@@ -334,7 +348,17 @@ export async function runAssistant(input: { userId: string; messages: Conversati
       // The record keeps the outcome and the ids, never the result: that goes to the model and nowhere else.
       activity.push({ round, callId: call.id, tool: name, outcome: result.status, reason: result.status === "refused" ? result.reason : null, evidenceIds: callEvidence });
 
-      const content = JSON.stringify(result);
+      // What the model may see is decided HERE, before anything is serialized for it; the raw result goes only to onToolResult.
+      let shown: unknown = result;
+      if (visible !== null) {
+        try {
+          shown = filterToolResult(name, result, visible);
+        } catch (error) {
+          if (error instanceof EgressFilterError) throw stop("tool_result_unclassified", `The result of ${name} has a field the egress inventory does not classify, so none of it is sent.`);
+          throw error;
+        }
+      }
+      const content = JSON.stringify(shown);
       if (content.length > MAX_MESSAGE_CHARS) throw stop("tool_result_too_large", `The result of ${name} is too large to send back, and is never truncated.`);
       messages.push({ role: "tool", toolCallId: call.id, name, content });
       options.onToolResult?.({ round, callId: call.id, tool: name, result: structuredClone(result) });

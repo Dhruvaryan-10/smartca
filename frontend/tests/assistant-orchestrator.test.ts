@@ -119,7 +119,7 @@ test("the model cannot select an arbitrary function: a name is looked up in the 
 test("no write tool is reachable: the orchestrator imports no write path, database client or raw service", () => {
   const source = code("services/assistant/orchestrator.ts");
   const specifiers = [...new Set([...source.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(specifiers, ["./model", "./tools", "../errors", "@/lib/assistant/args", "@/lib/assistant/tool-contract", "@/lib/money-input"].sort(), "an import here is a decision");
+  assert.deepEqual(specifiers, ["./model", "./tools", "../errors", "@/lib/assistant/args", "@/lib/assistant/egress-filter", "@/lib/assistant/tool-contract", "@/lib/money-input"].sort(), "an import here is a decision");
   // "./tools" is a TYPE import only; the real tool set is loaded by the one dynamic import, and only when the caller gave no tools.
   assert.match(source, /import type \{[^}]*\} from "\.\/tools"/, "the static import of ./tools is type-only");
   assert.doesNotMatch(source, /^import\s+\{[^}]*\}\s+from\s+"\.\/tools"/m, "no runtime import of ./tools at load time");

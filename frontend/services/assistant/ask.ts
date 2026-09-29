@@ -42,6 +42,8 @@ export type AskDeps = {
   tools?: OrchestratorOptions["tools"];
   /** Which tools this call may use. Defaults to all six (see OrchestratorOptions.allowedTools). Code's choice, never the model's. */
   allowedTools?: OrchestratorOptions["allowedTools"];
+  /** Which egress classes the model may be shown of each tool result. Unset, results are sent whole (see OrchestratorOptions.visibleClasses). */
+  visibleClasses?: OrchestratorOptions["visibleClasses"];
   /** Timeout, total run budget, output size and approved recipients for the model calls (see ModelRunPolicy). None is set by default. */
   modelPolicy?: ModelRunPolicy;
 };
@@ -82,6 +84,7 @@ export async function askAssistant(input: AskInput, deps: AskDeps): Promise<Answ
         model: deps.model,
         ...(deps.tools === undefined ? {} : { tools: deps.tools }),
         ...(deps.allowedTools === undefined ? {} : { allowedTools: deps.allowedTools }),
+        ...(deps.visibleClasses === undefined ? {} : { visibleClasses: deps.visibleClasses }),
         ...(deps.modelPolicy === undefined ? {} : { modelPolicy: deps.modelPolicy }),
         // A deep copy of each full result, for buildAnswer alone: it is never logged, returned or put in an error.
         onToolResult: (record) => {

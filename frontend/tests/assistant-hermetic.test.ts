@@ -19,6 +19,8 @@ const PURE_SOURCE = [
   "lib/assistant/args.ts",
   "lib/assistant/failure.ts",
   "lib/assistant/tool-contract.ts",
+  "lib/assistant/profiles.ts",
+  "lib/assistant/egress-filter.ts",
   "services/assistant/model.ts",
   "services/assistant/orchestrator.ts",
   "services/assistant/ask.ts",
@@ -41,6 +43,8 @@ const PURE_TESTS = [
   "tests/assistant-orchestrator.test.ts",
   "tests/assistant-ask.test.ts",
   "tests/assistant-tool-gate.test.ts",
+  "tests/assistant-profiles.test.ts",
+  "tests/assistant-egress-filter.test.ts",
 ];
 const PURE_HELPERS = ["tests/helpers-answer.ts", "tests/helpers-errors.ts", "tests/helpers-orchestrator.ts"];
 

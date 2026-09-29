@@ -18,6 +18,7 @@ import assert from "node:assert/strict";
 import { ASSISTANT_EGRESS_INVENTORY, ASSISTANT_TOOL_NAMES } from "../lib/assistant/tool-contract";
 import type { EgressFieldClass, ToolName } from "../lib/assistant/tool-contract";
 import { createAssistantTools } from "../services/assistant/tools";
+import { filterToolResult } from "../lib/assistant/egress-filter";
 import type { AssistantToolDeps } from "../services/assistant/tools";
 import type { TaxEvidence, TaxRetrievalInput, TaxRetrievalResult } from "../services/tax-retrieval";
 
@@ -198,3 +199,21 @@ for (const tool of ASSISTANT_TOOL_NAMES) {
   });
 }
 
+// The filter against the REAL tool wrappers: showing every class reproduces each result exactly, and forbidding a class leaves none of
+// the text that class carries anywhere in what the model would be sent.
+for (const tool of ASSISTANT_TOOL_NAMES) {
+  test(`${tool}: the egress filter shows the real result exactly, or without every trace of a forbidden class`, async () => {
+    const ALL = { user_free_text: true, user_financial_data: true, tax_corpus_text: true, system_value: true };
+    for (const { deps, args } of PROBES[tool]) {
+      const tools = createAssistantTools({ listTransactions: async () => structuredClone(LEDGER), ...deps });
+      const raw = await tools[tool](USER, structuredClone(args));
+      const before = JSON.stringify(raw);
+      assert.equal(JSON.stringify(filterToolResult(tool, raw, ALL)), before, "all classes: byte for byte");
+      const noFree = JSON.stringify(filterToolResult(tool, raw, { ...ALL, user_free_text: false }));
+      assert.equal(noFree.includes(MARK.ledger) || noFree.includes(MARK.argument), false, "no ledger or argument text without user_free_text");
+      const noCorpus = JSON.stringify(filterToolResult(tool, raw, { ...ALL, tax_corpus_text: false }));
+      assert.equal(noCorpus.includes(MARK.corpus), false, "no corpus text without tax_corpus_text");
+      assert.equal(JSON.stringify(raw), before, "the raw result is untouched");
+    }
+  });
+}
