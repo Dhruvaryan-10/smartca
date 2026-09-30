@@ -9,7 +9,7 @@
 // passes its `allowedTools` AND its `classes` (as the orchestrator's `visibleClasses`), and the model is then shown only the fields of
 // each tool result whose class the profile allows. A profile may therefore allow a tool while forbidding some of what it returns, for
 // example financial figures without the person's free text.
-import { ASSISTANT_EGRESS_INVENTORY, ASSISTANT_TOOL_NAMES } from "./tool-contract";
+import { ASSISTANT_EGRESS_INVENTORY, ASSISTANT_TOOL_EFFECTS, ASSISTANT_TOOL_NAMES } from "./tool-contract";
 import type { EgressFieldClass, ToolName } from "./tool-contract";
 
 export const EGRESS_FIELD_CLASSES: readonly EgressFieldClass[] = ["user_free_text", "user_financial_data", "tax_corpus_text", "system_value"];
@@ -50,6 +50,7 @@ export type AssistantProfileErrorCode =
   | "empty_tools"
   | "unknown_tool"
   | "duplicate_tool"
+  | "write_tool_not_permitted"
   | "invalid_classes";
 
 /** A profile that cannot be honoured. It is a mistake in code, never the model's, and nothing runs. */
@@ -82,6 +83,9 @@ export function resolveProfile(profile: unknown): ResolvedProfile {
   for (const tool of tools) {
     if (typeof tool !== "string" || !known.has(tool)) throw bad("unknown_tool", `Profile "${id}" names a tool that does not exist: "${String(tool)}".`);
     if (seen.has(tool)) throw bad("duplicate_tool", `Profile "${id}" names "${tool}" twice.`);
+    if (ASSISTANT_TOOL_EFFECTS[tool as keyof typeof ASSISTANT_TOOL_EFFECTS] === "write") {
+      throw bad("write_tool_not_permitted", `Profile "${id}" names "${tool}", a write tool: that needs a server-side write authorization that does not exist.`);
+    }
     seen.add(tool);
   }
 

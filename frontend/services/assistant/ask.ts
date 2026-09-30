@@ -1,4 +1,5 @@
-// The safe, composed, SERVER-SIDE entry point to the assistant: the one function a future route should call.
+// The safe, composed, SERVER-SIDE entry point to the assistant run. A route never calls it directly: the external path reaches it only
+// through the application service (service.ts -> external.ts), after consent, the access plan and the limits.
 //
 //   trusted caller input -> runAssistant -> the FULL tool results (server-side) -> buildAnswer -> the validated Answer, and only that
 //
@@ -44,6 +45,8 @@ export type AskDeps = {
   allowedTools?: OrchestratorOptions["allowedTools"];
   /** Which egress classes the model may be shown of each tool result. Unset, results are sent whole (see OrchestratorOptions.visibleClasses). */
   visibleClasses?: OrchestratorOptions["visibleClasses"];
+  /** Metadata about each tool call that ran (see OrchestratorOptions.onToolActivity). For audit; never a result or argument. */
+  onToolActivity?: OrchestratorOptions["onToolActivity"];
   /** Timeout, total run budget, output size and approved recipients for the model calls (see ModelRunPolicy). None is set by default. */
   modelPolicy?: ModelRunPolicy;
 };
@@ -85,6 +88,7 @@ export async function askAssistant(input: AskInput, deps: AskDeps): Promise<Answ
         ...(deps.tools === undefined ? {} : { tools: deps.tools }),
         ...(deps.allowedTools === undefined ? {} : { allowedTools: deps.allowedTools }),
         ...(deps.visibleClasses === undefined ? {} : { visibleClasses: deps.visibleClasses }),
+        ...(deps.onToolActivity === undefined ? {} : { onToolActivity: deps.onToolActivity }),
         ...(deps.modelPolicy === undefined ? {} : { modelPolicy: deps.modelPolicy }),
         // A deep copy of each full result, for buildAnswer alone: it is never logged, returned or put in an error.
         onToolResult: (record) => {

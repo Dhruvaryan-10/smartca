@@ -24,6 +24,8 @@ const PURE_SOURCE = [
   "lib/assistant/egress-filter.ts",
   "lib/assistant/access-plan.ts",
   "lib/assistant/egress-disclosure.ts",
+  "lib/assistant/run-limits.ts",
+  "lib/assistant/consent-terms.ts",
   "services/assistant/model.ts",
   "services/assistant/orchestrator.ts",
   "services/assistant/ask.ts",
@@ -32,6 +34,11 @@ const PURE_SOURCE = [
   "services/assistant/synthetic-model.ts",
   "services/assistant/synthetic-tools.ts",
   "services/assistant/external.ts",
+  "services/assistant/provider.ts",
+  "services/assistant/provider-chat-completions.ts",
+  "services/assistant/api-contract.ts",
+  "services/assistant/events.ts",
+  "services/assistant/consent-contract.ts",
 ];
 /** Pure test fixtures and tests: none may need a database to LOAD. */
 const PURE_TESTS = [
@@ -53,8 +60,16 @@ const PURE_TESTS = [
   "tests/assistant-access-plan.test.ts",
   "tests/assistant-external.test.ts",
   "tests/assistant-egress-disclosure.test.ts",
+  "tests/assistant-provider.test.ts",
+  "tests/assistant-provider-chat.test.ts",
+  "tests/assistant-layering.test.ts",
+  "tests/assistant-api-contract.test.ts",
+  "tests/assistant-run-limits.test.ts",
+  "tests/assistant-external-config.test.ts",
+  "tests/assistant-run-limiter-contract.test.ts",
+  "tests/assistant-consent.test.ts",
 ];
-const PURE_HELPERS = ["tests/helpers-answer.ts", "tests/helpers-errors.ts", "tests/helpers-orchestrator.ts"];
+const PURE_HELPERS = ["tests/helpers-answer.ts", "tests/helpers-errors.ts", "tests/helpers-orchestrator.ts", "tests/helpers-provider.ts", "tests/helpers-limiter.ts"];
 
 const FORBIDDEN_FILES = [
   "db/client.ts", "db/load-env.ts", "services/assistant/tools.ts", "services/tax-retrieval.ts", "services/tax.ts",

@@ -29,7 +29,7 @@ import { MAX_MESSAGE_CHARS, ModelRequestError, ModelResponseError, withModelGuar
 import type { ModelAdapter, ModelGuardPolicy, ModelMessage, ModelToolCall, ModelToolDeclaration } from "./model";
 // Only the tool NAMES are needed at load time, and they come from a module with no imports. The real tool set (which imports the
 // database) is loaded by the one line in runAssistant that needs it, and only when the caller did not supply its own tools.
-import { ASSISTANT_TOOL_NAMES } from "@/lib/assistant/tool-contract";
+import { ASSISTANT_TOOL_EFFECTS, ASSISTANT_TOOL_NAMES } from "@/lib/assistant/tool-contract";
 import type { ToolName } from "@/lib/assistant/tool-contract";
 import { EgressFilterError, filterToolResult, readEgressClasses } from "@/lib/assistant/egress-filter";
 import type { EgressClasses } from "@/lib/assistant/egress-filter";
@@ -251,6 +251,8 @@ export type OrchestratorOptions = {
    * that throws is not swallowed. Never put what it receives in a log, an error or a response.
    */
   onToolResult?: (record: ToolResultRecord) => void;
+  /** Opt-in: called once per tool call that ran, with the same METADATA the caller's result carries (never a result or argument). For audit. */
+  onToolActivity?: (activity: ToolActivity) => void;
 };
 
 // ---------------------------------------------------------------------
@@ -258,6 +260,8 @@ export type OrchestratorOptions = {
 // ---------------------------------------------------------------------
 
 const ALLOWED_TOOLS: ReadonlySet<string> = new Set(ASSISTANT_TOOL_NAMES);
+// A write tool is never in reach: not by default, and not by any allowedTools list (see ToolEffect in lib/assistant/tool-contract.ts).
+const DEFAULT_TOOLS: ReadonlySet<string> = new Set(ASSISTANT_TOOL_NAMES.filter((name) => ASSISTANT_TOOL_EFFECTS[name] !== "write"));
 
 // The assistant's own validators, one per tool: strict allow-lists and hard limits. A failure here means the model sent
 // something no tool accepts, so the call is refused before anything runs.
@@ -272,12 +276,13 @@ const VALIDATORS: Record<ToolName, (args: unknown) => unknown> = {
 
 /** The caller's tool gate, checked: undefined means all six. */
 function readAllowedTools(allowed: unknown): ReadonlySet<string> {
-  if (allowed === undefined) return ALLOWED_TOOLS;
+  if (allowed === undefined) return DEFAULT_TOOLS;
   if (!Array.isArray(allowed) || allowed.length < 1) throw new RangeError("allowedTools must be a list of at least one tool name.");
   const set = new Set<string>();
   for (const name of allowed) {
     if (typeof name !== "string" || !ALLOWED_TOOLS.has(name)) throw new RangeError(`allowedTools names a tool that does not exist: "${String(name)}".`);
     if (set.has(name)) throw new RangeError(`allowedTools names "${name}" twice.`);
+    if (ASSISTANT_TOOL_EFFECTS[name as ToolName] === "write") throw new RangeError(`allowedTools names "${name}", a write tool: no write tool may be offered to a model.`);
     set.add(name);
   }
   return set;
@@ -347,6 +352,7 @@ export async function runAssistant(input: { userId: string; messages: Conversati
       const callEvidence = evidenceIdsOf(name, result);
       // The record keeps the outcome and the ids, never the result: that goes to the model and nowhere else.
       activity.push({ round, callId: call.id, tool: name, outcome: result.status, reason: result.status === "refused" ? result.reason : null, evidenceIds: callEvidence });
+      options.onToolActivity?.(structuredClone(activity[activity.length - 1]));
 
       // What the model may see is decided HERE, before anything is serialized for it; the raw result goes only to onToolResult.
       let shown: unknown = result;

@@ -29,6 +29,20 @@
       "when": 1789826935771,
       "tag": "0003_tax_corpus",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790693965610,
+      "tag": "0004_assistant_authorization_and_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790780411261,
+      "tag": "0005_assistant_run_limits_and_retention",
+      "breakpoints": true
     }
   ]
 }

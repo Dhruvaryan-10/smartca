@@ -115,6 +115,12 @@ test("the inventory fingerprint is stable, and changes when any field or class c
   assert.equal(describeEgress(["calculate_tax"], ALL).format, DISCLOSURE_FORMAT_VERSION);
 });
 
+test("TRIPWIRE: the inventory fingerprint in force is pinned, because changing it invalidates every stored consent", () => {
+  // Any change to ASSISTANT_EGRESS_INVENTORY (a field, class or tool) changes this value, and then every stored grant is refused as
+  // consent_outdated until the person grants the new disclosure (ADR 0002). Update the pin only as that deliberate, reviewed decision.
+  assert.equal(fingerprintInventory(), "inv1-cab11f51");
+});
+
 test("a malformed request is a RangeError, and the result is frozen", () => {
   for (const tools of [[], ["delete_ledger"], ["calculate_tax", "calculate_tax"]]) assert.throws(() => describeEgress(tools as ToolName[], ALL), RangeError);
   assert.throws(() => describeEgress(["calculate_tax"], { user_free_text: true } as never), RangeError);

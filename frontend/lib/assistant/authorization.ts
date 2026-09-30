@@ -24,7 +24,10 @@ import { ASSISTANT_TOOL_NAMES } from "./tool-contract";
 import type { EgressFieldClass, ToolName } from "./tool-contract";
 import { EGRESS_FIELD_CLASSES, classesReturnedBy, resolveProfile } from "./profiles";
 
-/** The authorization format this code understands. Any other version is refused. */
+/**
+ * The authorization format this code understands: the version of the record and of its rules. Any other version is refused. It is NOT
+ * the egress inventory's fingerprint (`inventoryVersion` below), which says which field list was disclosed, not how a grant is read.
+ */
 export const AUTHORIZATION_VERSION = 1;
 
 /** An authorization as it is handed over: plain data (so it can later be stored and audited), and untrusted until resolved. */
@@ -45,6 +48,11 @@ export type AssistantAuthorization = {
   /** When it was given and when it stops applying: ISO 8601 UTC, e.g. "2026-09-29T10:00:00Z". */
   issuedAt: string;
   expiresAt: string;
+  /**
+   * The fingerprint of the egress inventory the person was shown and consented to (egress-disclosure.ts, `fingerprintInventory`). Its
+   * shape is checked here; the access plan (access-plan.ts) refuses it unless it equals the fingerprint of the inventory in force.
+   */
+  inventoryVersion: string;
 };
 
 /** What the server knows at the moment of use, from its own trusted sources. */
@@ -70,6 +78,8 @@ export type EffectiveAuthorization = {
   allowedTools: readonly ToolName[];
   issuedAt: string;
   expiresAt: string;
+  /** As stated by the authorization; compared with the inventory in force by the access plan. */
+  inventoryVersion: string;
 };
 
 export type AssistantAuthorizationErrorCode =
@@ -86,7 +96,11 @@ export type AssistantAuthorizationErrorCode =
   /** Names a class the profile forbids, or leaves no class set that anything can be sent under. */
   | "data_class_mismatch"
   /** The authorized recipient is not on the server's configured list of approved recipients. */
-  | "recipient_not_approved";
+  | "recipient_not_approved"
+  /** The person withdrew it (services/assistant/authorization-store.ts). */
+  | "authorization_revoked"
+  /** Given for another egress inventory than the one in force: what would be sent is not what the person was shown. */
+  | "inventory_changed";
 
 const MESSAGES: Record<AssistantAuthorizationErrorCode, string> = {
   consent_not_given: "The person has not given explicit consent to external model processing.",
@@ -96,6 +110,8 @@ const MESSAGES: Record<AssistantAuthorizationErrorCode, string> = {
   profile_mismatch: "The authorization was not given for this assistant profile.",
   data_class_mismatch: "The authorized data classes do not fit the assistant profile.",
   recipient_not_approved: "The authorized recipient is not an approved recipient in the server's configuration.",
+  authorization_revoked: "The person withdrew their consent to external model processing.",
+  inventory_changed: "The authorization was given for a different egress inventory than the one in force.",
 };
 
 /** An authorization that authorizes nothing here. A code and a fixed message; it never repeats a user id, recipient or other value. */
@@ -108,7 +124,7 @@ export class AssistantAuthorizationError extends Error {
   }
 }
 
-const FIELDS = ["version", "authorizationId", "userId", "profileId", "recipient", "consent", "dataClasses", "issuedAt", "expiresAt"] as const;
+const FIELDS = ["version", "authorizationId", "userId", "profileId", "recipient", "consent", "dataClasses", "issuedAt", "expiresAt", "inventoryVersion"] as const;
 const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 /**
  * The recipient id shape the model guard compares against: an exact copy of META_ID in services/assistant/model.ts, which is the
@@ -152,7 +168,7 @@ export function resolveAuthorization(profile: unknown, authorization: unknown, c
   // The shape: exactly the known fields, each well formed. Nothing is defaulted.
   const keys = Object.keys(authorization);
   if (keys.length !== FIELDS.length || !FIELDS.every((f) => keys.includes(f))) throw fail("authorization_invalid");
-  const { version, authorizationId, userId, profileId, recipient, dataClasses, issuedAt, expiresAt } = authorization;
+  const { version, authorizationId, userId, profileId, recipient, dataClasses, issuedAt, expiresAt, inventoryVersion } = authorization;
   if (version !== AUTHORIZATION_VERSION) throw fail("authorization_invalid");
   if (typeof authorizationId !== "string" || !OPAQUE_ID.test(authorizationId)) throw fail("authorization_invalid");
   if (!isUserId(userId)) throw fail("authorization_invalid");
@@ -168,6 +184,7 @@ export function resolveAuthorization(profile: unknown, authorization: unknown, c
   const issued = timestampOf(issuedAt);
   const expires = timestampOf(expiresAt);
   if (issued === null || expires === null || expires <= issued) throw fail("authorization_invalid");
+  if (typeof inventoryVersion !== "string" || !OPAQUE_ID.test(inventoryVersion)) throw fail("authorization_invalid");
 
   // The context comes from the server, but a broken one still authorizes nothing.
   if (!isPlainObject(context)) throw fail("authorization_invalid");
@@ -200,5 +217,6 @@ export function resolveAuthorization(profile: unknown, authorization: unknown, c
     allowedTools: Object.freeze(allowedTools),
     issuedAt: issuedAt as string,
     expiresAt: expiresAt as string,
+    inventoryVersion,
   });
 }

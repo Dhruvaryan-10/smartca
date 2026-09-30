@@ -12,6 +12,7 @@ import type { AssistantProfile } from "../lib/assistant/profiles";
 import { ASSISTANT_TOOL_NAMES } from "../lib/assistant/tool-contract";
 import type { EgressFieldClass } from "../lib/assistant/tool-contract";
 import { META_ID, isRecipientId } from "../services/assistant/model";
+import { fingerprintInventory } from "../lib/assistant/egress-disclosure";
 
 const FRONTEND = path.resolve(__dirname, "..");
 const USER = "8f3a1c0e-5b7d-4c1a-9e2f-0a1b2c3d4e5f";
@@ -31,6 +32,7 @@ const grant = (over: Record<string, unknown> = {}): AssistantAuthorization =>
     dataClasses: ALL,
     issuedAt: "2026-09-29T10:00:00Z",
     expiresAt: "2026-09-29T14:00:00Z",
+    inventoryVersion: fingerprintInventory(),
     ...over,
   }) as AssistantAuthorization;
 
@@ -55,6 +57,7 @@ test("a full, explicit grant under FULL_PROFILE resolves to all six tools and al
     allowedTools: [...ASSISTANT_TOOL_NAMES],
     issuedAt: "2026-09-29T10:00:00Z",
     expiresAt: "2026-09-29T14:00:00Z",
+    inventoryVersion: fingerprintInventory(),
   });
   assert.ok(Object.isFrozen(effective) && Object.isFrozen(effective.dataClasses) && Object.isFrozen(effective.allowedTools));
   // The order the person listed classes in does not matter.
@@ -139,13 +142,20 @@ test("a broad intention or preference is not consent: only the explicit value \"
 });
 
 test("nothing is defaulted: every field is required, and an unknown field or version is refused", () => {
-  for (const field of ["version", "authorizationId", "userId", "profileId", "recipient", "dataClasses", "issuedAt", "expiresAt"]) {
+  for (const field of ["version", "authorizationId", "userId", "profileId", "recipient", "dataClasses", "issuedAt", "expiresAt", "inventoryVersion"]) {
     const partial: Record<string, unknown> = { ...grant() };
     delete partial[field];
     refuses("authorization_invalid", partial);
   }
   refuses("authorization_invalid", { ...grant(), extra: 1 });
   for (const version of [0, 2, "1", null]) refuses("authorization_invalid", grant({ version }));
+});
+
+test("the record's format version and the inventory fingerprint are separate: neither stands in for the other", () => {
+  // resolveAuthorization checks the fingerprint's shape only; whether it is the inventory in force is the access plan's check.
+  assert.equal(resolveAuthorization(FULL_PROFILE, grant({ inventoryVersion: "inv1-00000000" }), CONTEXT).inventoryVersion, "inv1-00000000");
+  refuses("authorization_invalid", grant({ version: fingerprintInventory() }));
+  refuses("authorization_invalid", grant({ inventoryVersion: AUTHORIZATION_VERSION }));
 });
 
 test("malformed values are refused", () => {
@@ -157,6 +167,7 @@ test("malformed values are refused", () => {
     dataClasses: [[], "user_free_text", ["user_free_text", "user_free_text"], ["user_free_text", "everything"], [7]],
     issuedAt: ["2026-09-29", "2026-09-29T10:00:00", "2026-09-29T10:00:00+05:30", "2026-02-30T10:00:00Z", "not a date", 1_790_000_000_000],
     expiresAt: ["2026-09-29T25:00:00Z", "2026-13-01T00:00:00Z"],
+    inventoryVersion: ["", " inv1-00000000", "inv1 00000000", "i".repeat(129), 7, null],
   };
   for (const [field, values] of Object.entries(bad)) for (const value of values) refuses("authorization_invalid", grant({ [field]: value }));
   // A window that ends when it starts, or before, is malformed.

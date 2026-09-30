@@ -12,7 +12,7 @@ import path from "node:path";
 import { inspect } from "node:util";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ASSISTANT_ENV_NAMES, AssistantConfigError, Secret, policyFromConfig, readAssistantConfig } from "../services/assistant/config";
+import { ASSISTANT_ENV_NAMES, ASSISTANT_LIMIT_ENV_NAMES, ASSISTANT_RETENTION_ENV_NAMES, AssistantConfigError, Secret, policyFromConfig, readAssistantConfig } from "../services/assistant/config";
 import { MAX_MESSAGE_CHARS, MAX_MODEL_TIMEOUT_MS } from "../services/assistant/model";
 import { MAX_ROUNDS } from "../services/assistant/orchestrator";
 
@@ -173,7 +173,8 @@ test("the default reads process.env (and only when asked), and a real-data mode 
 test(".env.example documents exactly these variables, off and synthetic by default, with no value that could be a secret", () => {
   const lines = fs.readFileSync(path.join(FRONTEND, ".env.example"), "utf8").split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l));
   const values = Object.fromEntries(lines.map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
-  for (const name of ASSISTANT_ENV_NAMES) assert.ok(name in values, `${name} is documented`);
+  for (const name of [...ASSISTANT_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES]) assert.ok(name in values, `${name} is documented`);
+  for (const name of [...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES]) assert.equal(values[name], "", `${name} has no value in the example`);
   assert.equal(values.ASSISTANT_ENABLED, "false");
   assert.equal(values.ASSISTANT_ENV, "synthetic");
   for (const name of ["MODEL_ENDPOINT", "MODEL_API_KEY", "MODEL_ID", "MODEL_APPROVED_RECIPIENTS", "MODEL_TIMEOUT_MS", "MODEL_MAX_OUTPUT_CHARS"]) assert.equal(values[name], "", `${name} has no value in the example`);
@@ -184,16 +185,33 @@ test("the configuration module is server-side only: it reads exactly these varia
   const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   const source = strip(fs.readFileSync(path.join(FRONTEND, "services/assistant/config.ts"), "utf8"));
   const read = [...source.matchAll(/(?:\benv\.|["'])((?:ASSISTANT|MODEL)_[A-Z_]+)\b/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(read)].sort(), [...ASSISTANT_ENV_NAMES].sort(), "the variables it reads are exactly the documented ones");
+  assert.deepEqual([...new Set(read)].sort(), [...ASSISTANT_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES].sort(), "the variables it reads are exactly the documented ones");
   assert.doesNotMatch(source, /\bconsole\s*\.|fetch\(|https?:\/\/|NEXT_PUBLIC|from\s+["'](?:@\/db|\.\.\/db|next|next-auth)/, "no logging, no network, no public variable, no database");
   const importers: string[] = [];
+  const assistantUsers: string[] = [];
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(path.join(FRONTEND, dir), { withFileTypes: true })) {
       const rel = `${dir}/${entry.name}`;
       if (entry.isDirectory()) walk(rel);
-      else if (/\.(tsx?|jsx?)$/.test(entry.name) && /assistant\/(config|synthetic|ask|model|orchestrator)/.test(fs.readFileSync(path.join(FRONTEND, rel), "utf8"))) importers.push(rel);
+      else if (/\.(tsx?|jsx?)$/.test(entry.name)) {
+        const source = fs.readFileSync(path.join(FRONTEND, rel), "utf8");
+        if (/assistant\/(config|synthetic|ask|model|orchestrator)/.test(source)) importers.push(rel);
+        if (/services\/assistant|lib\/assistant/.test(source)) assistantUsers.push(rel);
+      }
     }
   };
   for (const dir of ["app", "components", "hooks", "contexts"]) if (fs.existsSync(path.join(FRONTEND, dir))) walk(dir);
-  assert.deepEqual(importers, [], "no page, route or component imports the assistant");
+  assert.deepEqual(importers, [], "no page, route or component imports the configuration or the assistant's internals");
+  // The one exception is the assistant's API route, and it reaches the assistant only through its HTTP boundary (services/assistant/http.ts),
+  // which calls the application service: a route cannot skip consent, the plan, the limits or the audit.
+  // The consent routes are the other exception: they reach the assistant only through the consent HTTP boundary (consent-http.ts), which
+  // stores the server's own terms through the authorization store (pinned in assistant-layering.test.ts).
+  assert.deepEqual(
+    assistantUsers,
+    ["app/api/assistant/consent/disclosure/route.ts", "app/api/assistant/consent/route.ts", "app/api/assistant/route.ts"],
+    "only the assistant and consent routes refer to the assistant",
+  );
+  const route = strip(fs.readFileSync(path.join(FRONTEND, "app/api/assistant/route.ts"), "utf8"));
+  assert.deepEqual([...route.matchAll(/^import\s[^;]*?from\s+["']([^"']+)["']/gm)].map((m) => m[1]).sort(), ["@/services/assistant/http", "@/services/session"]);
+  assert.deepEqual([...route.matchAll(/export\s+(?:async\s+)?function\s+(\w+)/g)].map((m) => m[1]), ["POST"], "POST only");
 });

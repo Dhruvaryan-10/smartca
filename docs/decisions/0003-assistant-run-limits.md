@@ -1,0 +1,43 @@
+# ADR 0003: Assistant run limits and run-record retention
+
+**Status:** Accepted (2026-09-30; global concurrency cap and retention added 2026-09-30)
+
+## Context
+
+The external assistant path (`services/assistant/service.ts`, behind `POST /api/assistant`) sends a person's authorized data to an external model and costs money per call. It needs server-side limits that no client can change, that hold when several server instances run at once, and that cannot be raced by simultaneous requests. SmartCA already runs PostgreSQL through Drizzle; no hosting is chosen and no other shared infrastructure exists. The run records the limits count are audit metadata, and need a retention rule.
+
+## Decision
+
+1. **Storage: PostgreSQL, through the existing Drizzle layer.** No Redis or other counter service. The counters are the run audit rows themselves (`assistant_runs`), so the limits and the audit cannot disagree, and every server instance shares them.
+2. **Three kinds of limit:**
+   - **per-person requests:** runs one person may start in a window (every attempt counts, refused ones included), and model tokens they may use in it;
+   - **per-person concurrency:** runs one person may have in progress at once;
+   - **global concurrency:** runs in progress across everyone at once.
+3. **Why a global cap.** The per-person limits bound each person but not their sum. Without a global cap, a burst of people shows up first at the provider (429s, timeouts) and at the database pool, and by then each run has already executed its tools and sent the person's authorized data: the failure happens *after* egress and after the cost. The global cap refuses a run **before** any tool runs or anything leaves SmartCA. It is the capacity of the deployment, sized to the provider's quota; it does not lower any person's own limits, and a person over their own limit is told about their own limit first. Its refusal (`assistant_busy`, HTTP 429, retryable) reveals no count and nothing about anyone else.
+4. **The values are configuration, never code.** An external configuration must set every one: `ASSISTANT_RATE_WINDOW_SECONDS`, `ASSISTANT_MAX_RUNS_PER_WINDOW`, `ASSISTANT_MAX_CONCURRENT_RUNS`, `ASSISTANT_MAX_TOKENS_PER_WINDOW`, `ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS`, and `ASSISTANT_RUN_RETENTION_DAYS`. Each must be plain decimal digits from 1 to its **validation ceiling** (window ≤ 86,400 s; runs per window ≤ 10,000; per-person concurrency ≤ 20; tokens per window ≤ 100,000,000; global concurrency ≤ 10,000; retention ≤ 3,650 days). The ceilings are bounds against mistyped configuration, not product limits. An impossible combination is refused: a person's concurrency above the global one. Missing or invalid values fail closed, naming the variables and never a value, when the configuration is validated, again when the limiter is built, and (for retention) when the purge job starts. The configuration is validated on every request rather than at process start, so a misconfigured assistant refuses assistant requests without taking down the rest of the application. The deployment values are **not** chosen here: they belong to the deployment and depend on the provider's quota and price.
+5. **What stays in code, deliberately:** the per-run safety bounds (at most 4 model calls and 8 tool calls per run, `MAX_MODEL_TIMEOUT_MS`, the message and output size caps) and the stale grace (`STALE_RUN_GRACE_MS`, 60 s). These are invariants of the assistant's design, not capacity settings, and each is pinned by tests.
+6. **Atomic acquisition across instances:** each acquire checks the usage and inserts the run's row in one transaction holding two PostgreSQL advisory locks, always taken in the same order so they cannot deadlock: the mode's global lock, then the person's. The global lock serialises acquisition (a count and one insert, milliseconds; never held while a run executes), so the global cap is exact across instances. The global count reads only running rows of that mode through a partial index (`assistant_runs_running_idx`, migration `0005`). A failure inside the transaction rolls it back, so it leaves no slot.
+7. **Release on every terminal path:** once a slot is taken, the application service releases it in a `finally`, with the outcome, whether the run succeeded, the provider failed or timed out, a tool was denied, or something unexpected failed. Release closes only a still-running run, so a second release changes nothing and nothing counts below zero.
+8. **Stale runs:** a run whose release was never written (the instance died) stops counting as in progress, for its person and for the global cap, once it is older than the run budget (timeout × model rounds) plus `STALE_RUN_GRACE_MS`. No sweeper is needed: the rule is applied in the count itself.
+9. **Order in a request:** the session, the body and the configuration first; then the person's consent; only then the limits. An unauthorized request takes no slot; a refused request never reaches the model provider or any tool.
+10. **Deterministic time:** the limiter and the purge job are always given the time (the service passes its injected clock, the real one in production); neither reads a clock itself.
+11. **The boundary is an interface:** `RunLimiter` (`acquire`, `release`) in `lib/assistant/run-limits.ts`; `createPostgresRunLimiter` in `services/assistant/run-store.ts` is the production implementation. Tests also use an in-memory implementation (`tests/helpers-limiter.ts`), and one shared contract (`LIMITER_CONTRACT`, including the global cases) runs against both, so they are proven to behave the same.
+12. **No automatic retries.** A retryable failure is returned to the caller as retryable. If retries are added later, each must stay inside the run's existing model-call and time budget and must never take a second slot.
+13. **Retention of the run records:**
+    - `assistant_runs` rows hold metadata only (ids, codes, counts, tool and class names, token counts, times), never a message, answer, tool argument, tool result, credential or error text. Each row is kept for `ASSISTANT_RUN_RETENTION_DAYS` after it **started**, whatever its outcome, then deleted by the operator's scheduled job `npm run assistant:purge-runs` (`services/assistant/run-retention.ts`), in bounded batches, idempotently. The job prints counts only.
+    - The retention floor (one day) is at least the longest possible limit window and far longer than any stale bound, so the job can never delete a row that a limit still counts; a test pins that relation.
+    - Consent records (`assistant_authorizations`) are **not** deleted by the job: they are the record that a person agreed, kept for the life of the account. Deleting an old revoked grant could also let an older, still-valid grant decide again, silently restoring withdrawn consent. Deleting a user cascades to both tables.
+
+## Consequences
+
+- Limits hold on one or many instances with no new infrastructure; tests prove it with two limiter instances and two service instances on one database, including a race of six people for a global cap of two.
+- Acquisition is serialised per mode by the global lock. It holds for a count and an insert only, so throughput is bounded by that transaction's latency, far above what any provider quota allows; if that ever became the bottleneck, the lock could be sharded without changing the `RunLimiter` interface.
+- The token budget counts a run's tokens when it is released, against the window its start falls in. Runs already in progress when the budget is reached may finish, so the budget can be exceeded by at most what the person's concurrent runs use (bounded by `ASSISTANT_MAX_CONCURRENT_RUNS` and the per-run model-call and output limits); no new run starts once it is reached.
+- A limit check reads only the person's rows started after the earlier of the window start and the stale bound, and the global check reads only running rows, so its cost stays bounded however long the audit history grows; the purge job keeps that history bounded as well.
+- Audit questions older than the retention period cannot be answered from `assistant_runs`; the deployment chooses the period accordingly.
+
+## Open (not decided)
+
+- The actual limit and retention values for any deployment, and a spending ceiling in money. They depend on the provider, which is not chosen.
+- Who may read the run audit, and whether it is exported to a log system (the service emits metadata-only events to an optional sink; none is wired).
+- Limits for any other part of the application.

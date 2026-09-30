@@ -274,6 +274,75 @@ export const documentExtractions = pgTable("document_extractions", {
 ]);
 
 // ---------------------------------------------------------------------
+// Assistant authorization (consent) and run audit
+// ---------------------------------------------------------------------
+
+// A person's explicit authorization for external model processing (lib/assistant/authorization.ts). It is created, read and
+// revoked only by server code (services/assistant/authorization-store.ts); a client never supplies it. A revoked or expired row
+// authorizes nothing, and rows are never deleted by the assistant, so what was authorized stays auditable.
+export const assistantAuthorizations = pgTable("assistant_authorizations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  formatVersion: integer("format_version").notNull(),
+  profileId: text("profile_id").notNull(),
+  recipient: text("recipient").notNull(),
+  consent: text("consent").notNull(),
+  dataClasses: text("data_classes").array().notNull(),
+  // The egress inventory fingerprint the person was shown (lib/assistant/egress-disclosure.ts).
+  inventoryVersion: text("inventory_version").notNull(),
+  issuedAt: timestamp("issued_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("assistant_authorizations_user_recipient_profile_idx").on(table.userId, table.recipient, table.profileId),
+  check("assistant_authorizations_consent_check", sql`${table.consent} IN ('granted', 'not_granted')`),
+  check("assistant_authorizations_window_check", sql`${table.expiresAt} > ${table.issuedAt}`),
+]);
+
+// One row per assistant run attempt by a signed-in person: METADATA ONLY (who, when, which mode, profile, recipient, model and
+// authorization, which tools and data classes, counts, tokens, timing and outcome). No message, answer, tool argument or tool
+// result is ever stored here. The per-user rate and concurrency limits are counted against these rows
+// (services/assistant/run-store.ts).
+export const assistantRuns = pgTable("assistant_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  authorizationId: uuid("authorization_id").references(() => assistantAuthorizations.id, { onDelete: "set null" }),
+  mode: text("mode").notNull(),
+  profileId: text("profile_id"),
+  recipient: text("recipient"),
+  modelId: text("model_id"),
+  allowedTools: text("allowed_tools").array(),
+  visibleClasses: text("visible_classes").array(),
+  inventoryVersion: text("inventory_version"),
+  status: text("status").notNull(),
+  // The public API code of the outcome (services/assistant/api-contract.ts) and the internal error kind, e.g.
+  // "OrchestratorError:unknown_tool". Codes only, never an error message.
+  resultCode: text("result_code"),
+  failureKind: text("failure_kind"),
+  answerState: text("answer_state"),
+  modelCalls: integer("model_calls").notNull().default(0),
+  toolCalls: integer("tool_calls").notNull().default(0),
+  toolRefusals: integer("tool_refusals").notNull().default(0),
+  toolsCalled: text("tools_called").array().notNull().default(sql`'{}'::text[]`),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  durationMs: integer("duration_ms"),
+}, (table) => [
+  index("assistant_runs_user_started_idx").on(table.userId, table.startedAt),
+  index("assistant_runs_authorization_idx").on(table.authorizationId),
+  // The global concurrency count (run-store.ts) reads only running rows of one mode by start time; this partial index holds only those.
+  index("assistant_runs_running_idx").on(table.mode, table.startedAt).where(sql`${table.status} = 'running'`),
+  // The retention job (run-retention.ts) deletes by start time across all users.
+  index("assistant_runs_started_idx").on(table.startedAt),
+  check("assistant_runs_mode_check", sql`${table.mode} IN ('synthetic', 'external')`),
+  check("assistant_runs_status_check", sql`${table.status} IN ('running', 'succeeded', 'failed', 'rejected')`),
+  check("assistant_runs_counts_check", sql`${table.modelCalls} >= 0 AND ${table.toolCalls} >= 0 AND ${table.toolRefusals} >= 0`),
+]);
+
+// ---------------------------------------------------------------------
 // Tax-law corpus (Phase 5A) — GLOBAL, read-only reference data.
 // ---------------------------------------------------------------------
 // Authoritative tax-law sources and their chunks, for retrieval. NOTHING

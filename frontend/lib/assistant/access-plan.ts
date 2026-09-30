@@ -49,7 +49,7 @@ export type ModelAccessPlan = Readonly<{
 }>;
 
 /**
- * Plan one run's access. Throws AssistantAuthorizationError (consent, validity, binding, profile, class or recipient) or
+ * Plan one run's access. Throws AssistantAuthorizationError (consent, validity, binding, profile, class, recipient or inventory) or
  * AssistantProfileError, and never returns a partial or widened plan. `configuredRecipients` is the server configuration's approved
  * list (MODEL_APPROVED_RECIPIENTS); a malformed list is a mistake in code (a RangeError), and an empty one approves nothing.
  */
@@ -64,6 +64,9 @@ export function planModelAccess(profile: unknown, authorization: unknown, contex
   const shown = new Set<EgressFieldClass>(effective.dataClasses);
   const visibleClasses = Object.freeze(Object.fromEntries(EGRESS_FIELD_CLASSES.map((c) => [c, shown.has(c)])) as Record<EgressFieldClass, boolean>);
   const disclosure = describeEgress(effective.allowedTools, visibleClasses);
+  // Consent covers exactly the inventory the person was shown: a grant for any other one (a field, class or tool added, removed or
+  // reclassified since) authorizes nothing until the person grants the current disclosure. This is not AUTHORIZATION_VERSION.
+  if (effective.inventoryVersion !== disclosure.inventoryVersion) throw new AssistantAuthorizationError("inventory_changed");
   const audit: AccessAuditRecord = Object.freeze({
     authorizationId: effective.authorizationId,
     userId: effective.userId,

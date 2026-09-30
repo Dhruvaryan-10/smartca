@@ -10,6 +10,17 @@
 //   MODEL_TIMEOUT_MS=                per-call timeout, at most MAX_MODEL_TIMEOUT_MS
 //   MODEL_MAX_OUTPUT_CHARS=          the longest answer accepted, at most MAX_MESSAGE_CHARS
 //
+// An EXTERNAL configuration (validateExternalEnv) additionally requires, and validates against hard ceilings:
+//   ASSISTANT_RATE_WINDOW_SECONDS=   the window the per-user limits are counted over
+//   ASSISTANT_MAX_RUNS_PER_WINDOW=   assistant runs one person may start in that window
+//   ASSISTANT_MAX_CONCURRENT_RUNS=   runs one person may have in progress at once
+//   ASSISTANT_MAX_TOKENS_PER_WINDOW= model tokens (as the provider reports them) one person may use in that window
+//   ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS= runs in progress across everyone at once
+//   ASSISTANT_RUN_RETENTION_DAYS=    how long run audit metadata is kept (services/assistant/run-retention.ts deletes older rows)
+// and exactly one approved recipient. readAssistantConfig still REFUSES external mode (ADR 0002: until a provider is assessed and
+// the consent mechanics are decided), so validateExternalEnv is reachable only from tests; enabling external mode is a reviewed
+// change to readAssistantConfig, not a new code path.
+//
 // When enabled, EVERY one of them is required and validated, so the path a real deployment will use is exercised even by the
 // synthetic transport. The synthetic transport never contacts the endpoint and never uses the key for anything: put a
 // placeholder there, never a real key. A configuration error names the VARIABLES that are wrong and never a value, so a
@@ -28,7 +39,32 @@ export const ASSISTANT_ENV_NAMES = [
   "MODEL_TIMEOUT_MS",
   "MODEL_MAX_OUTPUT_CHARS",
 ] as const;
-export type AssistantEnvName = (typeof ASSISTANT_ENV_NAMES)[number];
+/** Required only for an external configuration: the per-user limits (services/assistant/run-store.ts). */
+export const ASSISTANT_LIMIT_ENV_NAMES = [
+  "ASSISTANT_RATE_WINDOW_SECONDS",
+  "ASSISTANT_MAX_RUNS_PER_WINDOW",
+  "ASSISTANT_MAX_CONCURRENT_RUNS",
+  "ASSISTANT_MAX_TOKENS_PER_WINDOW",
+  "ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS",
+] as const;
+/** Required only for an external configuration, and by the retention job on its own (readRunRetentionDays). */
+export const ASSISTANT_RETENTION_ENV_NAMES = ["ASSISTANT_RUN_RETENTION_DAYS"] as const;
+export type AssistantEnvName =
+  | (typeof ASSISTANT_ENV_NAMES)[number]
+  | (typeof ASSISTANT_LIMIT_ENV_NAMES)[number]
+  | (typeof ASSISTANT_RETENTION_ENV_NAMES)[number];
+const ALL_ENV_NAMES: readonly string[] = [...ASSISTANT_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES];
+
+/** Hard ceilings on the limit values: validation bounds against mistyped configuration, not product limits (those are configured). */
+export const RUN_LIMIT_CEILINGS = { windowSeconds: 86_400, maxRunsPerWindow: 10_000, maxConcurrentRuns: 20, maxTokensPerWindow: 100_000_000, maxGlobalConcurrentRuns: 10_000 } as const;
+/**
+ * Bounds on ASSISTANT_RUN_RETENTION_DAYS. The floor is one day, which is also the longest a limit window can be (RUN_LIMIT_CEILINGS), so
+ * the retention job can never delete a row that a limit still counts; a test pins that relation.
+ */
+export const RUN_RETENTION_DAYS_BOUNDS = { min: 1, max: 3_650 } as const;
+
+/** The limits of an external configuration, all enforced server-side (lib/assistant/run-limits.ts). */
+export type AssistantRunLimits = Readonly<{ windowSeconds: number; maxRunsPerWindow: number; maxConcurrentRuns: number; maxTokensPerWindow: number; maxGlobalConcurrentRuns: number }>;
 
 export const ASSISTANT_CONFIG_ERROR_CODES = ["invalid_configuration", "missing_configuration", "real_data_mode_not_permitted", "assistant_disabled"] as const;
 export type AssistantConfigErrorCode = (typeof ASSISTANT_CONFIG_ERROR_CODES)[number];
@@ -38,7 +74,7 @@ export class AssistantConfigError extends Error {
   readonly code: AssistantConfigErrorCode;
   readonly variables: readonly AssistantEnvName[];
   constructor(code: AssistantConfigErrorCode, variables: readonly AssistantEnvName[] = []) {
-    const names = variables.filter((name) => (ASSISTANT_ENV_NAMES as readonly string[]).includes(name));
+    const names = variables.filter((name) => ALL_ENV_NAMES.includes(name));
     super(`The assistant is not configured (${code})${names.length > 0 ? `: ${names.join(", ")}` : ""}.`);
     this.name = "AssistantConfigError";
     this.code = code;
@@ -70,18 +106,18 @@ export class Secret {
  * The configuration. `env: "external"` exists as a TYPE only, for services/assistant/external.ts: readAssistantConfig never produces it
  * (any ASSISTANT_ENV but "synthetic" still fails closed), so no environment can reach an external model through this reader.
  */
-export type AssistantConfig =
-  | { enabled: false }
-  | {
-      enabled: true;
-      env: "synthetic" | "external";
-      endpoint: string;
-      apiKey: Secret;
-      modelId: string;
-      approvedRecipients: readonly string[];
-      timeoutMs: number;
-      maxOutputChars: number;
-    };
+type ModelSettings = {
+  enabled: true;
+  endpoint: string;
+  apiKey: Secret;
+  modelId: string;
+  approvedRecipients: readonly string[];
+  timeoutMs: number;
+  maxOutputChars: number;
+};
+export type SyntheticAssistantConfig = ModelSettings & { env: "synthetic" };
+export type ExternalAssistantConfig = ModelSettings & { env: "external"; limits: AssistantRunLimits; runRetentionDays: number };
+export type AssistantConfig = { enabled: false } | SyntheticAssistantConfig | ExternalAssistantConfig;
 
 const KEY_SHAPE = /^[\x21-\x7e]{1,512}$/;
 const MODEL_ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
@@ -103,6 +139,17 @@ function recipientsOf(value: string): string[] | null {
   return [...new Set(parts)];
 }
 
+/**
+ * A limit value: plain decimal digits only (no sign, decimal point, exponent, whitespace, "NaN" or "Infinity"), from 1 to `max`. It
+ * allows as many digits as the largest ceiling needs, which the shared 7-digit pattern above does not (a token budget of 10,000,000 or
+ * more would otherwise be refused).
+ */
+function limitValue(value: string, max: number): number | null {
+  if (!/^[0-9]{1,9}$/.test(value)) return null;
+  const n = Number(value);
+  return Number.isSafeInteger(n) && n >= 1 && n <= max ? n : null;
+}
+
 function boundedInteger(value: string, max: number): number | null {
   if (!WHOLE_NUMBER.test(value)) return null;
   const n = Number(value);
@@ -122,10 +169,17 @@ export function readAssistantConfig(env: Readonly<Record<string, string | undefi
   const mode = env.ASSISTANT_ENV;
   if (mode !== undefined && mode !== "" && mode !== "synthetic") throw new AssistantConfigError("real_data_mode_not_permitted", ["ASSISTANT_ENV"]);
 
-  const value = (name: AssistantEnvName): string | undefined => {
-    const raw = env[name];
-    return typeof raw === "string" && raw.trim() !== "" ? raw : undefined;
-  };
+  return Object.freeze({ env: "synthetic" as const, ...readModelSettings(env) });
+}
+
+const valueIn = (env: Readonly<Record<string, string | undefined>>) => (name: AssistantEnvName): string | undefined => {
+  const raw = env[name];
+  return typeof raw === "string" && raw.trim() !== "" ? raw : undefined;
+};
+
+/** The model settings every enabled mode needs, all required and validated. Errors name variables, never values. */
+function readModelSettings(env: Readonly<Record<string, string | undefined>>): ModelSettings {
+  const value = valueIn(env);
   const missing = ASSISTANT_ENV_NAMES.filter((name) => name !== "ASSISTANT_ENABLED" && value(name) === undefined);
   if (missing.length > 0) throw new AssistantConfigError("missing_configuration", missing);
 
@@ -145,15 +199,71 @@ export function readAssistantConfig(env: Readonly<Record<string, string | undefi
   if (maxOutputChars === null) invalid.push("MODEL_MAX_OUTPUT_CHARS");
   if (invalid.length > 0) throw new AssistantConfigError("invalid_configuration", ASSISTANT_ENV_NAMES.filter((name) => invalid.includes(name)));
 
-  return Object.freeze({
+  return {
     enabled: true as const,
-    env: "synthetic" as const,
     endpoint: endpoint as string,
     apiKey: new Secret(apiKey as string),
     modelId: modelId as string,
     approvedRecipients: Object.freeze(approvedRecipients as string[]),
     timeoutMs: timeoutMs as number,
     maxOutputChars: maxOutputChars as number,
+  };
+}
+
+/**
+ * ASSISTANT_RUN_RETENTION_DAYS alone, for the retention job, which needs nothing else. Required, plain digits, within
+ * RUN_RETENTION_DAYS_BOUNDS; fails closed naming the variable, never its value.
+ */
+export function readRunRetentionDays(env: Readonly<Record<string, string | undefined>>): number {
+  const raw = valueIn(env)("ASSISTANT_RUN_RETENTION_DAYS");
+  if (raw === undefined) throw new AssistantConfigError("missing_configuration", ["ASSISTANT_RUN_RETENTION_DAYS"]);
+  const days = limitValue(raw, RUN_RETENTION_DAYS_BOUNDS.max);
+  if (days === null || days < RUN_RETENTION_DAYS_BOUNDS.min) throw new AssistantConfigError("invalid_configuration", ["ASSISTANT_RUN_RETENTION_DAYS"]);
+  return days;
+}
+
+/**
+ * Validates an EXTERNAL configuration: enabled, ASSISTANT_ENV=external, every model variable, exactly one approved recipient (fallback
+ * recipients are undecided), every limit (per user and global) and the run retention. Fails closed, naming variables and never values. NOT used by
+ * readAssistantConfig, which still refuses external mode: nothing but tests reaches this until that is deliberately changed.
+ */
+export function validateExternalEnv(env: Readonly<Record<string, string | undefined>>): ExternalAssistantConfig {
+  if (env.ASSISTANT_ENABLED !== "true") throw new AssistantConfigError("assistant_disabled");
+  if (env.ASSISTANT_ENV !== "external") throw new AssistantConfigError("invalid_configuration", ["ASSISTANT_ENV"]);
+  const value = valueIn(env);
+  const missingLimits = [...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES].filter((name) => value(name) === undefined);
+  const settings = readModelSettings(env);
+  if (missingLimits.length > 0) throw new AssistantConfigError("missing_configuration", missingLimits);
+  if (settings.approvedRecipients.length !== 1) throw new AssistantConfigError("invalid_configuration", ["MODEL_APPROVED_RECIPIENTS"]);
+  const limits = {
+    windowSeconds: limitValue(value("ASSISTANT_RATE_WINDOW_SECONDS") as string, RUN_LIMIT_CEILINGS.windowSeconds),
+    maxRunsPerWindow: limitValue(value("ASSISTANT_MAX_RUNS_PER_WINDOW") as string, RUN_LIMIT_CEILINGS.maxRunsPerWindow),
+    maxConcurrentRuns: limitValue(value("ASSISTANT_MAX_CONCURRENT_RUNS") as string, RUN_LIMIT_CEILINGS.maxConcurrentRuns),
+    maxTokensPerWindow: limitValue(value("ASSISTANT_MAX_TOKENS_PER_WINDOW") as string, RUN_LIMIT_CEILINGS.maxTokensPerWindow),
+    maxGlobalConcurrentRuns: limitValue(value("ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS") as string, RUN_LIMIT_CEILINGS.maxGlobalConcurrentRuns),
+  };
+  const invalid: AssistantEnvName[] = [];
+  if (limits.windowSeconds === null) invalid.push("ASSISTANT_RATE_WINDOW_SECONDS");
+  if (limits.maxRunsPerWindow === null) invalid.push("ASSISTANT_MAX_RUNS_PER_WINDOW");
+  if (limits.maxConcurrentRuns === null) invalid.push("ASSISTANT_MAX_CONCURRENT_RUNS");
+  if (limits.maxTokensPerWindow === null) invalid.push("ASSISTANT_MAX_TOKENS_PER_WINDOW");
+  if (limits.maxGlobalConcurrentRuns === null) invalid.push("ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS");
+  // A person's own concurrency can never exceed everyone's: such a pair is a mistake, not a limit.
+  if (limits.maxConcurrentRuns !== null && limits.maxGlobalConcurrentRuns !== null && limits.maxConcurrentRuns > limits.maxGlobalConcurrentRuns) {
+    invalid.push("ASSISTANT_MAX_CONCURRENT_RUNS", "ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS");
+  }
+  let runRetentionDays: number | null = null;
+  try {
+    runRetentionDays = readRunRetentionDays(env);
+  } catch {
+    invalid.push("ASSISTANT_RUN_RETENTION_DAYS");
+  }
+  if (invalid.length > 0) throw new AssistantConfigError("invalid_configuration", invalid);
+  return Object.freeze({
+    ...settings,
+    env: "external" as const,
+    limits: Object.freeze(limits as { [K in keyof AssistantRunLimits]: number }),
+    runRetentionDays: runRetentionDays as number,
   });
 }
 

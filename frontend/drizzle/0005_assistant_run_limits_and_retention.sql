@@ -1,0 +1,2 @@
+CREATE INDEX "assistant_runs_running_idx" ON "assistant_runs" USING btree ("mode","started_at") WHERE "assistant_runs"."status" = 'running';--> statement-breakpoint
+CREATE INDEX "assistant_runs_started_idx" ON "assistant_runs" USING btree ("started_at");

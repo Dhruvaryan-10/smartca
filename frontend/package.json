@@ -11,9 +11,10 @@
     "db:seed": "tsx db/seed.ts",
     "db:verify": "tsx scripts/verify-db.ts",
     "rag:ingest": "tsx scripts/rag-ingest.ts",
+    "assistant:purge-runs": "tsx scripts/assistant-purge-runs.ts",
     "rag:eval": "tsx scripts/rag-eval.ts",
     "test": "tsx --test tests/**/*.test.ts",
-    "test:assistant-pure": "tsx --test tests/assistant-answer.test.ts tests/assistant-answer-eval.test.ts tests/assistant-answer-hardening.test.ts tests/assistant-ask.test.ts tests/assistant-config.test.ts tests/assistant-errors.test.ts tests/assistant-hermetic.test.ts tests/assistant-model.test.ts tests/assistant-model-limits.test.ts tests/assistant-orchestrator.test.ts tests/assistant-synthetic.test.ts tests/assistant-tool-gate.test.ts tests/assistant-profiles.test.ts tests/assistant-authorization.test.ts tests/assistant-egress-filter.test.ts tests/assistant-access-plan.test.ts tests/assistant-external.test.ts tests/assistant-egress-disclosure.test.ts",
+    "test:assistant-pure": "tsx --test tests/assistant-answer.test.ts tests/assistant-answer-eval.test.ts tests/assistant-answer-hardening.test.ts tests/assistant-ask.test.ts tests/assistant-config.test.ts tests/assistant-errors.test.ts tests/assistant-hermetic.test.ts tests/assistant-model.test.ts tests/assistant-model-limits.test.ts tests/assistant-orchestrator.test.ts tests/assistant-synthetic.test.ts tests/assistant-tool-gate.test.ts tests/assistant-profiles.test.ts tests/assistant-authorization.test.ts tests/assistant-egress-filter.test.ts tests/assistant-access-plan.test.ts tests/assistant-external.test.ts tests/assistant-egress-disclosure.test.ts tests/assistant-provider.test.ts tests/assistant-provider-chat.test.ts tests/assistant-layering.test.ts tests/assistant-api-contract.test.ts tests/assistant-run-limits.test.ts tests/assistant-external-config.test.ts tests/assistant-run-limiter-contract.test.ts tests/assistant-consent.test.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },

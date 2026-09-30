@@ -37,6 +37,7 @@ const grant = (over: Record<string, unknown> = {}): AssistantAuthorization =>
     dataClasses: ALL,
     issuedAt: "2026-09-29T10:00:00Z",
     expiresAt: "2026-09-29T14:00:00Z",
+    inventoryVersion: fingerprintInventory(),
     ...over,
   }) as AssistantAuthorization;
 
@@ -102,6 +103,18 @@ test("every authorization failure still stops the plan: consent, validity, bindi
   refuses("binding_mismatch", () => planModelAccess(FULL_PROFILE, grant(), { ...CONTEXT, userId: "someone-else" }, CONFIGURED));
   refuses("profile_mismatch", () => planModelAccess(SYNTHETIC_PROFILE, grant(), CONTEXT, CONFIGURED));
   refuses("data_class_mismatch", () => planModelAccess(FULL_PROFILE, grant({ dataClasses: ["system_value", "user_financial_data"] }), CONTEXT, CONFIGURED));
+});
+
+test("a grant is usable only for the inventory in force: a matching fingerprint plans, any other is inventory_changed", () => {
+  assert.equal(planModelAccess(FULL_PROFILE, grant(), CONTEXT, CONFIGURED).audit.inventoryVersion, fingerprintInventory());
+  for (const inventoryVersion of ["inv1-00000000", fingerprintInventory().toUpperCase(), "inv2-cab11f51"]) {
+    refuses("inventory_changed", () => planModelAccess(FULL_PROFILE, grant({ inventoryVersion }), CONTEXT, CONFIGURED));
+  }
+  // The inventory is compared only once everything else holds, so a stale grant that is also expired, foreign or unapproved says so.
+  const stale = grant({ inventoryVersion: "inv1-00000000" });
+  refuses("authorization_expired", () => planModelAccess(FULL_PROFILE, stale, { ...CONTEXT, now: Date.UTC(2026, 8, 30) }, CONFIGURED));
+  refuses("binding_mismatch", () => planModelAccess(FULL_PROFILE, stale, { ...CONTEXT, userId: "someone-else" }, CONFIGURED));
+  refuses("recipient_not_approved", () => planModelAccess(FULL_PROFILE, stale, CONTEXT, ["recipient-b"]));
 });
 
 test("the audit record carries ids, classes, tools and times, never a value from the person's data", () => {

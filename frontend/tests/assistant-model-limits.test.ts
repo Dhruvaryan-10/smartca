@@ -148,7 +148,7 @@ test("an outside AbortSignal on the orchestrator's modelPolicy cancels a hung ru
 // --- typed, provider-neutral errors ---------------------------------------------------------------------------------------------
 
 test("a ModelProviderError has a closed set of codes, a fixed message, and nothing else: no cause, no detail, no free text", () => {
-  assert.deepEqual([...MODEL_ERROR_CODES].sort(), ["aborted", "budget_exceeded", "invalid_response", "output_too_large", "rate_limited", "recipient_not_approved", "refused", "timeout", "unavailable"]);
+  assert.deepEqual([...MODEL_ERROR_CODES].sort(), ["aborted", "authentication_failed", "budget_exceeded", "invalid_response", "output_too_large", "rate_limited", "recipient_not_approved", "refused", "timeout", "unavailable"]);
   const messages = new Set<string>();
   for (const code of MODEL_ERROR_CODES) {
     const error = new ModelProviderError(code);

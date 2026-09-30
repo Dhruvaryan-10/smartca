@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { AssistantProfileError, EGRESS_FIELD_CLASSES, FULL_PROFILE, SYNTHETIC_PROFILE, classesReturnedBy, resolveProfile } from "../lib/assistant/profiles";
 import type { AssistantProfile } from "../lib/assistant/profiles";
-import { ASSISTANT_EGRESS_INVENTORY, ASSISTANT_TOOL_NAMES } from "../lib/assistant/tool-contract";
+import { ASSISTANT_EGRESS_INVENTORY, ASSISTANT_TOOL_EFFECTS, ASSISTANT_TOOL_NAMES } from "../lib/assistant/tool-contract";
 import { SYNTHETIC_TOOL_NAMES } from "../services/assistant/synthetic-tools";
 
 const FRONTEND = path.resolve(__dirname, "..");
@@ -78,4 +78,17 @@ test("profiles.ts imports only the pure tool contract", () => {
   const imports = [...source.matchAll(/^import\s[^;]*?from\s+["']([^"']+)["']/gm)].map((m) => m[1]);
   assert.deepEqual([...new Set(imports)], ["./tool-contract"]);
   assert.doesNotMatch(source, /require\(|import\(|process\.env|fetch\(/);
+});
+
+test("the mutation boundary: every tool has an explicit effect, none writes, and a write tool could not be offered", () => {
+  assert.deepEqual(Object.keys(ASSISTANT_TOOL_EFFECTS).sort(), [...ASSISTANT_TOOL_NAMES].sort());
+  assert.deepEqual({ ...ASSISTANT_TOOL_EFFECTS }, {
+    search_tax_law: "read", query_transactions: "read", get_financial_summary: "read",
+    calculate_tax: "calculate", compare_tax_regimes: "calculate", simulate_tax: "simulate",
+  });
+  const profiles = fs.readFileSync(path.join(FRONTEND, "lib/assistant/profiles.ts"), "utf8");
+  const orchestrator = fs.readFileSync(path.join(FRONTEND, "services/assistant/orchestrator.ts"), "utf8");
+  assert.match(profiles, /ASSISTANT_TOOL_EFFECTS\[[^\]]+\] === "write"/, "profiles refuse a write tool");
+  assert.match(orchestrator, /ASSISTANT_TOOL_EFFECTS\[name\] !== "write"/, "the orchestrator's default excludes write tools");
+  assert.match(orchestrator, /ASSISTANT_TOOL_EFFECTS\[name as ToolName\] === "write"/, "and it refuses one in allowedTools");
 });

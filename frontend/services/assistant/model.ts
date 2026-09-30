@@ -138,6 +138,7 @@ export const MODEL_ERROR_CODES = [
   "invalid_response",
   "output_too_large",
   "recipient_not_approved",
+  "authentication_failed",
 ] as const;
 export type ModelErrorCode = (typeof MODEL_ERROR_CODES)[number];
 
@@ -151,6 +152,7 @@ const MODEL_ERROR_MESSAGES: Record<ModelErrorCode, string> = {
   invalid_response: "The model service returned an answer that could not be used.",
   output_too_large: "The model's answer was longer than the allowed size.",
   recipient_not_approved: "The answer came from a recipient that is not approved.",
+  authentication_failed: "The model service did not accept SmartCA's credentials or configuration.",
 };
 
 /**
