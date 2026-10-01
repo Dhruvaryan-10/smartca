@@ -1,6 +1,6 @@
 // The provider boundary (services/assistant/provider.ts), with the recording test provider (helpers-provider.ts). PURE: no database, no
 // network, no real provider. What is pinned: where a request goes comes only from the configuration; the wire carries the ModelRequest
-// and nothing else; every provider failure becomes a typed ModelProviderError with nothing of the provider, the key or the request in it;
+// and nothing else, plus the configured output-token cap, which no caller or request can change; every provider failure becomes a typed ModelProviderError with nothing of the provider, the key or the request in it;
 // a provider cannot answer as another model or another recipient; and the model guard's limits still apply on top.
 import fs from "node:fs";
 import path from "node:path";
@@ -8,7 +8,7 @@ import { inspect } from "node:util";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createProviderAdapter, readProviderTarget } from "../services/assistant/provider";
-import { AssistantConfigError, readAssistantConfig, validateExternalEnv } from "../services/assistant/config";
+import { AssistantConfigError, MAX_MODEL_OUTPUT_TOKENS, readAssistantConfig, validateExternalEnv } from "../services/assistant/config";
 import type { AssistantConfig } from "../services/assistant/config";
 import { ModelProviderError, ModelRequestError, withModelGuard } from "../services/assistant/model";
 import type { ModelErrorCode, ModelRequest } from "../services/assistant/model";
@@ -22,7 +22,7 @@ const base: Record<string, string> = {
   ASSISTANT_ENABLED: "true", ASSISTANT_ENV: "synthetic", MODEL_ENDPOINT: ENDPOINT, MODEL_API_KEY: KEY, MODEL_ID: "fixture-model-1",
   MODEL_APPROVED_RECIPIENTS: RECIPIENT, MODEL_TIMEOUT_MS: "300", MODEL_MAX_OUTPUT_CHARS: "500",
 };
-const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...base, ASSISTANT_ENV: "external", ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "100", ASSISTANT_MAX_CONCURRENT_RUNS: "2", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", ASSISTANT_RUN_RETENTION_DAYS: "400", ...over });
+const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...base, ASSISTANT_ENV: "external", ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "100", ASSISTANT_MAX_CONCURRENT_RUNS: "2", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400", ...over });
 const REQUEST: ModelRequest = { messages: [{ role: "system", content: "s" }, { role: "user", content: "What is my tax?" }], tools: [] };
 const dump = (e: unknown) => [String(e), JSON.stringify(e), inspect(e, { depth: 5, showHidden: true }), (e as Error)?.stack ?? ""].join("\n");
 
@@ -61,10 +61,46 @@ test("the wire carries the configured endpoint, model and key, and exactly the M
   const [c] = calls;
   assert.equal(c.url, ENDPOINT);
   assert.deepEqual(c.headers, { "content-type": "application/json", authorization: `Bearer ${KEY}` });
-  assert.deepEqual(c.sent, { model: "fixture-model-1", maxOutputChars: 400, messages: REQUEST.messages, tools: [] });
+  assert.deepEqual(c.sent, { model: "fixture-model-1", maxOutputTokens: 1024, maxOutputChars: 400, messages: REQUEST.messages, tools: [] });
   assert.equal(c.body.includes(KEY), false, "the key is only in the authentication header, never the body");
   assert.equal(c.timeoutMs, 250);
   assert.deepEqual(response, { kind: "text", text: "hi", meta: { recipient: RECIPIENT, model: "fixture-model-1" } });
+});
+
+// --- the output-token cap comes only from the configuration --------------------------------------------------------------------
+
+test("every model call hands the driver the configured output-token cap", async () => {
+  const { driver, calls } = testProvider({ reply: { kind: "text", text: "a" } }, { reply: { kind: "text", text: "b" } }, { reply: { kind: "text", text: "c" } });
+  const adapter = createProviderAdapter(external({ MODEL_MAX_OUTPUT_TOKENS: "777" }), driver);
+  for (let i = 0; i < 3; i += 1) await adapter.complete(REQUEST);
+  assert.deepEqual(calls.map((c) => c.sent.maxOutputTokens), [777, 777, 777]);
+});
+
+test("neither the caller's options nor the request can set or change the output-token cap", async () => {
+  const { driver, calls } = testProvider();
+  const adapter = createProviderAdapter(external(), driver);
+  const smuggled = { ...REQUEST, maxOutputTokens: 999_999, max_tokens: 999_999 } as unknown as ModelRequest;
+  await adapter.complete(smuggled, { timeoutMs: 250, maxOutputTokens: 999_999, max_tokens: 999_999 } as never);
+  assert.equal(calls[0].sent.maxOutputTokens, 1024);
+  assert.equal(calls[0].body.includes("999999"), false, "nothing the caller supplied reached the wire");
+  // Under the guard, a request carrying a cap is refused outright, and nothing is sent.
+  const guarded = testProvider();
+  await assert.rejects(withModelGuard(createProviderAdapter(external(), guarded.driver)).complete(smuggled), (e: unknown) => e instanceof ModelRequestError);
+  assert.equal(guarded.calls.length, 0);
+});
+
+test("a configuration built past the validator with an unusable output-token cap fails closed, naming the variable, and sends nothing", () => {
+  const good = external() as Extract<AssistantConfig, { env: "external" }>;
+  for (const cap of [undefined, null, 0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, MAX_MODEL_OUTPUT_TOKENS + 1, "1024"]) {
+    const { driver, calls } = testProvider();
+    assert.throws(
+      () => createProviderAdapter({ ...good, maxOutputTokens: cap } as never, driver),
+      (e: unknown) => e instanceof AssistantConfigError && e.code === "invalid_configuration" && e.variables.join() === "MODEL_MAX_OUTPUT_TOKENS",
+      String(cap),
+    );
+    assert.equal(calls.length, 0);
+  }
+  assert.equal(readProviderTarget({ ...good, maxOutputTokens: MAX_MODEL_OUTPUT_TOKENS }).config.maxOutputTokens, MAX_MODEL_OUTPUT_TOKENS);
 });
 
 test("the transport's timeout is never longer than the configuration's", async () => {

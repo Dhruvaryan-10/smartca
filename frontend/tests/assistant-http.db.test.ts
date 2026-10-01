@@ -17,7 +17,7 @@ import type { AssistantHttpDeps } from "../services/assistant/http";
 import { ASSISTANT_API_ERROR_CODES, toAssistantApiError } from "../services/assistant/api-contract";
 import type { AssistantApiResponse } from "../services/assistant/api-contract";
 import type { AssistantEvent } from "../services/assistant/events";
-import { ASSISTANT_ENV_NAMES, ASSISTANT_LIMIT_ENV_NAMES, ASSISTANT_RETENTION_ENV_NAMES, validateExternalEnv } from "../services/assistant/config";
+import { ASSISTANT_ENV_NAMES, ASSISTANT_LIMIT_ENV_NAMES, ASSISTANT_PROVIDER_ENV_NAMES, ASSISTANT_RETENTION_ENV_NAMES, validateExternalEnv } from "../services/assistant/config";
 import type { AssistantConfig } from "../services/assistant/config";
 import { grantAssistantAuthorization } from "../services/assistant/authorization-store";
 import { ModelProviderError } from "../services/assistant/model";
@@ -40,7 +40,7 @@ const ENV: Record<string, string> = {
   ASSISTANT_ENABLED: "true", ASSISTANT_ENV: "external", MODEL_ENDPOINT: ENDPOINT, MODEL_API_KEY: KEY, MODEL_ID: "fixture-model-1",
   MODEL_APPROVED_RECIPIENTS: RECIPIENT, MODEL_TIMEOUT_MS: "3000", MODEL_MAX_OUTPUT_CHARS: "20000",
   ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "20", ASSISTANT_MAX_CONCURRENT_RUNS: "1", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000",
-  ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", ASSISTANT_RUN_RETENTION_DAYS: "400",
+  ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400",
 };
 const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...ENV, ...over });
 /** The stale bound the service derives from ENV: timeout 3000 ms x 4 model rounds + 60 s. */
@@ -127,7 +127,8 @@ test("the complete path: an authorized POST runs every layer, answers 200, and l
     noSecretsIn(wire, u, granted.authorizationId);
     for (const c of r.calls) {
       assert.equal(JSON.stringify(c.headers).includes(u), false);
-      assert.deepEqual(Object.keys(c.sent).sort(), ["maxOutputChars", "messages", "model", "tools"], "only the request, the model and the limit");
+      assert.deepEqual(Object.keys(c.sent).sort(), ["maxOutputChars", "maxOutputTokens", "messages", "model", "tools"], "only the request, the model and the limits");
+      assert.equal(c.sent.maxOutputTokens, Number(ENV.MODEL_MAX_OUTPUT_TOKENS), "the configured output-token cap, on every call");
     }
     assert.equal(toolMessagesSent(r.calls).length, 1, "the tool ran, and its (filtered) result reached the model once");
     noSecretsIn(r.text, u, granted.authorizationId);
@@ -227,7 +228,7 @@ test("an unusable body is refused as invalid_request (400) BEFORE consent is rea
 // --- configuration ----------------------------------------------------------------------------------------------------------------
 
 test("the route's default configuration comes from the environment and still refuses external mode: 503, recorded, no provider call", async () => {
-  const names = [...ASSISTANT_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES];
+  const names = [...ASSISTANT_ENV_NAMES, ...ASSISTANT_PROVIDER_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES];
   const before = Object.fromEntries(names.map((n) => [n, process.env[n]]));
   try {
     await withUsers(1, async ([u]) => {

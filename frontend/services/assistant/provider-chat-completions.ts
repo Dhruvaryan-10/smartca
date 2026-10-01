@@ -4,7 +4,9 @@
 // (SECURITY.md, "Open decisions"). No SDK or package is used; the transport is the platform `fetch`, injectable so that no test needs a
 // key or a network.
 //
-//   ModelRequest + configured model id -> encode -> { model, messages, tools? }          (nothing else: no user, no metadata, no key)
+//   ModelRequest + configured model id and output-token cap -> encode -> { model, messages, tools?, max_tokens }
+//                                                                          (nothing else: no user, no metadata, no key)
+//   The cap's wire field ("max_tokens") is chosen HERE and nowhere else, so a provider that wants another field changes only this file.
 //   transport: POST to the configured endpoint, no redirects, the guard's deadline and abort signal, a bounded response body
 //   2xx body -> decode -> exactly one assistant choice, finished normally -> text, or tool calls with parsed arguments; the model the
 //   provider names (required; the adapter refuses any but the configured one) and its token counts
@@ -61,12 +63,15 @@ function wireMessage(m: ModelMessage): Json {
   }
 }
 
-export function encodeChatCompletion(request: ModelRequest, target: { modelId: string }): string {
+export function encodeChatCompletion(request: ModelRequest, target: { modelId: string; maxOutputTokens: number }): string {
+  // Never send a request without a usable cap: the adapter turns this into a ModelRequestError and sends nothing.
+  if (!Number.isSafeInteger(target.maxOutputTokens) || target.maxOutputTokens < 1) throw new Error("The output-token cap is not a positive whole number.");
   const tools = request.tools ?? [];
   return JSON.stringify({
     model: target.modelId,
     messages: request.messages.map(wireMessage),
     ...(tools.length === 0 ? {} : { tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })) }),
+    max_tokens: target.maxOutputTokens,
   });
 }
 
@@ -176,7 +181,7 @@ export async function sendChatCompletion(request: ProviderWireRequest, fetchImpl
 export function chatCompletionsDriver(options: { fetch?: FetchLike } = {}): ProviderDriver {
   const fetchImpl: FetchLike = options.fetch ?? ((url, init) => fetch(url, init));
   return Object.freeze({
-    encode: (request: ModelRequest, target: { modelId: string }) => encodeChatCompletion(request, target),
+    encode: (request: ModelRequest, target: { modelId: string; maxOutputTokens: number }) => encodeChatCompletion(request, { modelId: target.modelId, maxOutputTokens: target.maxOutputTokens }),
     decode: decodeChatCompletion,
     authHeaders: (apiKey: Secret) => ({ authorization: `Bearer ${apiKey.reveal()}` }),
     transport: (request: ProviderWireRequest) => sendChatCompletion(request, fetchImpl),

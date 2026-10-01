@@ -1,5 +1,6 @@
 // The EXTERNAL configuration (services/assistant/config.ts, validateExternalEnv). PURE: no database, no network. What is pinned: every
-// value an external run needs is required and validated, including the per-user limits and exactly one approved recipient; errors name
+// value an external run needs is required and validated, including the per-user limits, the provider's output-token cap and exactly one
+// approved recipient; errors name
 // variables, never values; the key cannot leak through an error; and the reader STILL refuses external mode, with nothing but tests
 // able to build an external configuration.
 import fs from "node:fs";
@@ -8,8 +9,9 @@ import { inspect } from "node:util";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ASSISTANT_LIMIT_ENV_NAMES, AssistantConfigError, RUN_LIMIT_CEILINGS, RUN_RETENTION_DAYS_BOUNDS, readAssistantConfig, readRunRetentionDays, validateExternalEnv,
+  ASSISTANT_LIMIT_ENV_NAMES, ASSISTANT_PROVIDER_ENV_NAMES, AssistantConfigError, MAX_MODEL_OUTPUT_TOKENS, RUN_LIMIT_CEILINGS, RUN_RETENTION_DAYS_BOUNDS, readAssistantConfig, readRunRetentionDays, validateExternalEnv,
 } from "../services/assistant/config";
+import { MAX_MESSAGE_CHARS } from "../services/assistant/model";
 
 const FRONTEND = path.resolve(__dirname, "..");
 const KEY = "test-key-NOT-A-REAL-SECRET-0006";
@@ -27,7 +29,7 @@ const GOOD: Record<string, string> = {
   ASSISTANT_MAX_CONCURRENT_RUNS: "1",
   ASSISTANT_MAX_TOKENS_PER_WINDOW: "200000",
   ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100",
-  ASSISTANT_RUN_RETENTION_DAYS: "400",
+  MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400",
 };
 const rejection = (env: Record<string, string | undefined>): AssistantConfigError => {
   try {
@@ -46,6 +48,7 @@ test("a complete external configuration validates, with its limits and its one r
   assert.deepEqual(config.approvedRecipients, ["recipient-a"]);
   assert.deepEqual({ ...config.limits }, { windowSeconds: 3600, maxRunsPerWindow: 30, maxConcurrentRuns: 1, maxTokensPerWindow: 200000, maxGlobalConcurrentRuns: 100 });
   assert.equal(config.runRetentionDays, 400);
+  assert.equal(config.maxOutputTokens, 1024);
   assert.ok(Object.isFrozen(config) && Object.isFrozen(config.limits));
   assert.equal(JSON.stringify(config).includes(KEY), false, "the key renders redacted");
 });
@@ -64,6 +67,32 @@ test("every limit (per user and global) is required, and each out-of-bounds valu
     }
   }
   assert.deepEqual(rejection({ ...GOOD, ASSISTANT_MAX_CONCURRENT_RUNS: String(RUN_LIMIT_CEILINGS.maxConcurrentRuns + 1) }).variables, ["ASSISTANT_MAX_CONCURRENT_RUNS"]);
+});
+
+test("MODEL_MAX_OUTPUT_TOKENS is required, plain digits from 1 to its ceiling, and refused by name only, never by value", () => {
+  assert.deepEqual([...ASSISTANT_PROVIDER_ENV_NAMES], ["MODEL_MAX_OUTPUT_TOKENS"]);
+  for (const missing of [undefined, "", "   "]) {
+    const error = rejection({ ...GOOD, MODEL_MAX_OUTPUT_TOKENS: missing });
+    assert.deepEqual([error.code, error.variables], ["missing_configuration", ["MODEL_MAX_OUTPUT_TOKENS"]], JSON.stringify(missing));
+  }
+  const malformed = [
+    "0", "00", "-1", "-0", "+1", "+1024", "1.5", "1024.0", ".5", "1e3", "1E3", "0x10", "0b1", "1_000", "1,000", "ten", "NaN", "Infinity", "-Infinity",
+    " 1024", "1024 ", " 1024 ", "\t1024", "1024\n", "10 24", String(MAX_MODEL_OUTPUT_TOKENS + 1), `${10 ** 9}`, "9".repeat(20),
+  ];
+  for (const bad of malformed) {
+    const error = rejection({ ...GOOD, MODEL_MAX_OUTPUT_TOKENS: bad });
+    assert.deepEqual([error.code, error.variables], ["invalid_configuration", ["MODEL_MAX_OUTPUT_TOKENS"]], JSON.stringify(bad));
+    if (bad.trim() !== "") assert.equal([error.message, String(error), JSON.stringify(error)].join("\n").includes(bad.trim()), false, `the value ${JSON.stringify(bad)} is not in the error`);
+  }
+  assert.equal(validateExternalEnv({ ...GOOD, MODEL_MAX_OUTPUT_TOKENS: "1" }).maxOutputTokens, 1);
+  assert.equal(validateExternalEnv({ ...GOOD, MODEL_MAX_OUTPUT_TOKENS: String(MAX_MODEL_OUTPUT_TOKENS) }).maxOutputTokens, MAX_MODEL_OUTPUT_TOKENS);
+});
+
+test("the output-token ceiling is the model contract's own output bound, the same one MODEL_MAX_OUTPUT_CHARS is held to", () => {
+  assert.equal(MAX_MODEL_OUTPUT_TOKENS, MAX_MESSAGE_CHARS);
+  // The two output bounds are independent: neither is derived from, or validated against, the other.
+  assert.equal(validateExternalEnv({ ...GOOD, MODEL_MAX_OUTPUT_CHARS: "100", MODEL_MAX_OUTPUT_TOKENS: "4000" }).maxOutputChars, 100);
+  assert.equal(validateExternalEnv({ ...GOOD, MODEL_MAX_OUTPUT_CHARS: "20000", MODEL_MAX_OUTPUT_TOKENS: "16" }).maxOutputTokens, 16);
 });
 
 test("the model settings are required and validated exactly as for any mode, and more than one recipient is refused", () => {

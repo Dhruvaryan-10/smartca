@@ -12,7 +12,7 @@ import path from "node:path";
 import { inspect } from "node:util";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ASSISTANT_ENV_NAMES, ASSISTANT_LIMIT_ENV_NAMES, ASSISTANT_RETENTION_ENV_NAMES, AssistantConfigError, Secret, policyFromConfig, readAssistantConfig } from "../services/assistant/config";
+import { ASSISTANT_ENV_NAMES, ASSISTANT_LIMIT_ENV_NAMES, ASSISTANT_PROVIDER_ENV_NAMES, ASSISTANT_RETENTION_ENV_NAMES, AssistantConfigError, Secret, policyFromConfig, readAssistantConfig } from "../services/assistant/config";
 import { MAX_MESSAGE_CHARS, MAX_MODEL_TIMEOUT_MS } from "../services/assistant/model";
 import { MAX_ROUNDS } from "../services/assistant/orchestrator";
 
@@ -70,6 +70,15 @@ test("a complete synthetic configuration is read: typed, normalised and frozen",
   assert.ok(config.apiKey instanceof Secret);
   assert.equal(config.apiKey.reveal(), KEY);
   assert.ok(Object.isFrozen(config));
+});
+
+test("a synthetic configuration is unaffected by MODEL_MAX_OUTPUT_TOKENS: not required, not read, never part of the result", () => {
+  for (const value of [undefined, "", "1024", "0", "-1", "garbage", " 5 "]) {
+    const config = readAssistantConfig({ ...GOOD, MODEL_MAX_OUTPUT_TOKENS: value });
+    assert.equal(config.enabled && config.env, "synthetic", String(value));
+    assert.equal("maxOutputTokens" in config, false, String(value));
+    assert.deepEqual(config, readAssistantConfig(GOOD));
+  }
 });
 
 // --- only synthetic mode is valid --------------------------------------------------------------------------------------------
@@ -173,8 +182,8 @@ test("the default reads process.env (and only when asked), and a real-data mode 
 test(".env.example documents exactly these variables, off and synthetic by default, with no value that could be a secret", () => {
   const lines = fs.readFileSync(path.join(FRONTEND, ".env.example"), "utf8").split(/\r?\n/).filter((l) => /^[A-Z_]+=/.test(l));
   const values = Object.fromEntries(lines.map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
-  for (const name of [...ASSISTANT_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES]) assert.ok(name in values, `${name} is documented`);
-  for (const name of [...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES]) assert.equal(values[name], "", `${name} has no value in the example`);
+  for (const name of [...ASSISTANT_ENV_NAMES, ...ASSISTANT_PROVIDER_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES]) assert.ok(name in values, `${name} is documented`);
+  for (const name of [...ASSISTANT_PROVIDER_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES]) assert.equal(values[name], "", `${name} has no value in the example`);
   assert.equal(values.ASSISTANT_ENABLED, "false");
   assert.equal(values.ASSISTANT_ENV, "synthetic");
   for (const name of ["MODEL_ENDPOINT", "MODEL_API_KEY", "MODEL_ID", "MODEL_APPROVED_RECIPIENTS", "MODEL_TIMEOUT_MS", "MODEL_MAX_OUTPUT_CHARS"]) assert.equal(values[name], "", `${name} has no value in the example`);
@@ -185,7 +194,7 @@ test("the configuration module is server-side only: it reads exactly these varia
   const strip = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
   const source = strip(fs.readFileSync(path.join(FRONTEND, "services/assistant/config.ts"), "utf8"));
   const read = [...source.matchAll(/(?:\benv\.|["'])((?:ASSISTANT|MODEL)_[A-Z_]+)\b/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(read)].sort(), [...ASSISTANT_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES].sort(), "the variables it reads are exactly the documented ones");
+  assert.deepEqual([...new Set(read)].sort(), [...ASSISTANT_ENV_NAMES, ...ASSISTANT_PROVIDER_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES].sort(), "the variables it reads are exactly the documented ones");
   assert.doesNotMatch(source, /\bconsole\s*\.|fetch\(|https?:\/\/|NEXT_PUBLIC|from\s+["'](?:@\/db|\.\.\/db|next|next-auth)/, "no logging, no network, no public variable, no database");
   const importers: string[] = [];
   const assistantUsers: string[] = [];

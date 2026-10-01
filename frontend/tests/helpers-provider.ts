@@ -3,7 +3,8 @@
 // contacts nothing. PURE: no database, no network (the hermetic test lists it as a pure helper).
 //
 // It records exactly what crossed the provider boundary: the URL, the headers, the raw body, and the parsed body (the model id, the
-// messages, including every tool result as the model was sent it, and the tool definitions offered).
+// messages, including every tool result as the model was sent it, the tool definitions offered, and the output-token cap the adapter
+// handed the driver).
 import { parseToolArguments } from "../services/assistant/model";
 import type { ModelMessage, ModelRequest, ModelToolDeclaration } from "../services/assistant/model";
 import type { ProviderDriver, ProviderWireRequest } from "../services/assistant/provider";
@@ -23,7 +24,7 @@ export type RecordedWireCall = {
   url: string;
   headers: Record<string, string>;
   body: string;
-  sent: { model: string; maxOutputChars?: number; messages: ModelMessage[]; tools: ModelToolDeclaration[] };
+  sent: { model: string; maxOutputTokens: number; maxOutputChars?: number; messages: ModelMessage[]; tools: ModelToolDeclaration[] };
   timeoutMs?: number;
   hadSignal: boolean;
 };
@@ -34,7 +35,7 @@ export function testProvider(...steps: WireStep[]): { driver: ProviderDriver; ca
   const calls: RecordedWireCall[] = [];
   const driver: ProviderDriver = {
     encode: (request: ModelRequest, target) =>
-      JSON.stringify({ model: target.modelId, ...(target.maxOutputChars === undefined ? {} : { maxOutputChars: target.maxOutputChars }), messages: request.messages, tools: request.tools ?? [] }),
+      JSON.stringify({ model: target.modelId, maxOutputTokens: target.maxOutputTokens, ...(target.maxOutputChars === undefined ? {} : { maxOutputChars: target.maxOutputChars }), messages: request.messages, tools: request.tools ?? [] }),
     decode: (body: string) => {
       const parsed = JSON.parse(body) as { reply: Record<string, unknown>; model?: string; inputTokens?: number; outputTokens?: number };
       const reply = parsed.reply;

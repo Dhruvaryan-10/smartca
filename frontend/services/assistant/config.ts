@@ -11,6 +11,7 @@
 //   MODEL_MAX_OUTPUT_CHARS=          the longest answer accepted, at most MAX_MESSAGE_CHARS
 //
 // An EXTERNAL configuration (validateExternalEnv) additionally requires, and validates against hard ceilings:
+//   MODEL_MAX_OUTPUT_TOKENS=         the most output tokens the provider may generate per model call, at most MAX_MODEL_OUTPUT_TOKENS
 //   ASSISTANT_RATE_WINDOW_SECONDS=   the window the per-user limits are counted over
 //   ASSISTANT_MAX_RUNS_PER_WINDOW=   assistant runs one person may start in that window
 //   ASSISTANT_MAX_CONCURRENT_RUNS=   runs one person may have in progress at once
@@ -39,6 +40,8 @@ export const ASSISTANT_ENV_NAMES = [
   "MODEL_TIMEOUT_MS",
   "MODEL_MAX_OUTPUT_CHARS",
 ] as const;
+/** Required only for an external configuration: the provider's per-call generation bound (services/assistant/provider.ts). */
+export const ASSISTANT_PROVIDER_ENV_NAMES = ["MODEL_MAX_OUTPUT_TOKENS"] as const;
 /** Required only for an external configuration: the per-user limits (services/assistant/run-store.ts). */
 export const ASSISTANT_LIMIT_ENV_NAMES = [
   "ASSISTANT_RATE_WINDOW_SECONDS",
@@ -51,12 +54,19 @@ export const ASSISTANT_LIMIT_ENV_NAMES = [
 export const ASSISTANT_RETENTION_ENV_NAMES = ["ASSISTANT_RUN_RETENTION_DAYS"] as const;
 export type AssistantEnvName =
   | (typeof ASSISTANT_ENV_NAMES)[number]
+  | (typeof ASSISTANT_PROVIDER_ENV_NAMES)[number]
   | (typeof ASSISTANT_LIMIT_ENV_NAMES)[number]
   | (typeof ASSISTANT_RETENTION_ENV_NAMES)[number];
-const ALL_ENV_NAMES: readonly string[] = [...ASSISTANT_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES];
+const ALL_ENV_NAMES: readonly string[] = [...ASSISTANT_ENV_NAMES, ...ASSISTANT_PROVIDER_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES];
 
 /** Hard ceilings on the limit values: validation bounds against mistyped configuration, not product limits (those are configured). */
 export const RUN_LIMIT_CEILINGS = { windowSeconds: 86_400, maxRunsPerWindow: 10_000, maxConcurrentRuns: 20, maxTokensPerWindow: 100_000_000, maxGlobalConcurrentRuns: 10_000 } as const;
+/**
+ * The hard ceiling on MODEL_MAX_OUTPUT_TOKENS: a validation bound against mistyped configuration, like RUN_LIMIT_CEILINGS, not a product
+ * limit and not any provider's own maximum. It is the in-code output invariant MODEL_MAX_OUTPUT_CHARS is bounded by (MAX_MESSAGE_CHARS),
+ * so the provider is never allowed to generate more tokens than the longest answer the model contract accepts has characters.
+ */
+export const MAX_MODEL_OUTPUT_TOKENS = MAX_MESSAGE_CHARS;
 /**
  * Bounds on ASSISTANT_RUN_RETENTION_DAYS. The floor is one day, which is also the longest a limit window can be (RUN_LIMIT_CEILINGS), so
  * the retention job can never delete a row that a limit still counts; a test pins that relation.
@@ -116,7 +126,7 @@ type ModelSettings = {
   maxOutputChars: number;
 };
 export type SyntheticAssistantConfig = ModelSettings & { env: "synthetic" };
-export type ExternalAssistantConfig = ModelSettings & { env: "external"; limits: AssistantRunLimits; runRetentionDays: number };
+export type ExternalAssistantConfig = ModelSettings & { env: "external"; maxOutputTokens: number; limits: AssistantRunLimits; runRetentionDays: number };
 export type AssistantConfig = { enabled: false } | SyntheticAssistantConfig | ExternalAssistantConfig;
 
 const KEY_SHAPE = /^[\x21-\x7e]{1,512}$/;
@@ -224,14 +234,14 @@ export function readRunRetentionDays(env: Readonly<Record<string, string | undef
 
 /**
  * Validates an EXTERNAL configuration: enabled, ASSISTANT_ENV=external, every model variable, exactly one approved recipient (fallback
- * recipients are undecided), every limit (per user and global) and the run retention. Fails closed, naming variables and never values. NOT used by
+ * recipients are undecided), the provider's output-token cap, every limit (per user and global) and the run retention. Fails closed, naming variables and never values. NOT used by
  * readAssistantConfig, which still refuses external mode: nothing but tests reaches this until that is deliberately changed.
  */
 export function validateExternalEnv(env: Readonly<Record<string, string | undefined>>): ExternalAssistantConfig {
   if (env.ASSISTANT_ENABLED !== "true") throw new AssistantConfigError("assistant_disabled");
   if (env.ASSISTANT_ENV !== "external") throw new AssistantConfigError("invalid_configuration", ["ASSISTANT_ENV"]);
   const value = valueIn(env);
-  const missingLimits = [...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES].filter((name) => value(name) === undefined);
+  const missingLimits = [...ASSISTANT_PROVIDER_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES].filter((name) => value(name) === undefined);
   const settings = readModelSettings(env);
   if (missingLimits.length > 0) throw new AssistantConfigError("missing_configuration", missingLimits);
   if (settings.approvedRecipients.length !== 1) throw new AssistantConfigError("invalid_configuration", ["MODEL_APPROVED_RECIPIENTS"]);
@@ -242,7 +252,9 @@ export function validateExternalEnv(env: Readonly<Record<string, string | undefi
     maxTokensPerWindow: limitValue(value("ASSISTANT_MAX_TOKENS_PER_WINDOW") as string, RUN_LIMIT_CEILINGS.maxTokensPerWindow),
     maxGlobalConcurrentRuns: limitValue(value("ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS") as string, RUN_LIMIT_CEILINGS.maxGlobalConcurrentRuns),
   };
+  const maxOutputTokens = limitValue(value("MODEL_MAX_OUTPUT_TOKENS") as string, MAX_MODEL_OUTPUT_TOKENS);
   const invalid: AssistantEnvName[] = [];
+  if (maxOutputTokens === null) invalid.push("MODEL_MAX_OUTPUT_TOKENS");
   if (limits.windowSeconds === null) invalid.push("ASSISTANT_RATE_WINDOW_SECONDS");
   if (limits.maxRunsPerWindow === null) invalid.push("ASSISTANT_MAX_RUNS_PER_WINDOW");
   if (limits.maxConcurrentRuns === null) invalid.push("ASSISTANT_MAX_CONCURRENT_RUNS");
@@ -262,6 +274,7 @@ export function validateExternalEnv(env: Readonly<Record<string, string | undefi
   return Object.freeze({
     ...settings,
     env: "external" as const,
+    maxOutputTokens: maxOutputTokens as number,
     limits: Object.freeze(limits as { [K in keyof AssistantRunLimits]: number }),
     runRetentionDays: runRetentionDays as number,
   });

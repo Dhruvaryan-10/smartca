@@ -1,6 +1,6 @@
 // The one provider driver (services/assistant/provider-chat-completions.ts), through the provider adapter (provider.ts) and the model
 // guard (model.ts), with an in-memory fake `fetch`. PURE: no database, no network, no real key. What is pinned: the wire carries exactly
-// the ModelRequest's fields and the configured model, to the configured endpoint, with the key only in the authentication header;
+// the ModelRequest's fields, the configured model and the configured output-token cap (max_tokens), to the configured endpoint, with the key only in the authentication header;
 // configuration fails closed; every transport, status and decoding failure is a typed ModelProviderError with nothing of the provider,
 // the key or the request in it; an answer naming another model, or none, is refused; the guard's limits still apply; and a user id,
 // session, authorization or provider choice in a request cannot reach the wire.
@@ -27,7 +27,7 @@ const ENDPOINT = "https://provider.invalid/v1/chat/completions";
 const ENV: Record<string, string> = {
   ASSISTANT_ENABLED: "true", ASSISTANT_ENV: "external", MODEL_ENDPOINT: ENDPOINT, MODEL_API_KEY: KEY, MODEL_ID: MODEL,
   MODEL_APPROVED_RECIPIENTS: RECIPIENT, MODEL_TIMEOUT_MS: "300", MODEL_MAX_OUTPUT_CHARS: "500",
-  ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "100", ASSISTANT_MAX_CONCURRENT_RUNS: "2", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", ASSISTANT_RUN_RETENTION_DAYS: "400",
+  ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "100", ASSISTANT_MAX_CONCURRENT_RUNS: "2", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400",
 };
 const external = (over: Record<string, string | undefined> = {}): AssistantConfig => validateExternalEnv({ ...ENV, ...over });
 const dump = (e: unknown) => [String(e), JSON.stringify(e), inspect(e, { depth: 5, showHidden: true }), (e as Error)?.stack ?? ""].join("\n");
@@ -100,6 +100,7 @@ test("a valid request: POST to the configured endpoint, the key only as a bearer
       { role: "tool", tool_call_id: "c1", content: "{\"tax\":1000}" },
     ],
     tools: [{ type: "function", function: { name: "calculate_tax", description: "Calculates tax.", parameters: { type: "object", properties: {} } } }],
+    max_tokens: 1024,
   });
   assert.deepEqual(response, { kind: "text", text: "Your tax is 1,000.", meta: { recipient: RECIPIENT, model: MODEL, inputTokens: 10, outputTokens: 2 } });
 });
@@ -115,7 +116,61 @@ test("tool calls come back in the model contract's safe form, broken argument te
 test("a request with no tools sends no tools field", async () => {
   const { fetch, seen } = fakeFetch(() => json(text("hi")));
   await adapterFor(fetch).complete({ messages: [{ role: "user", content: "hi" }] });
-  assert.deepEqual(Object.keys(seen[0].sent).sort(), ["messages", "model"]);
+  assert.deepEqual(Object.keys(seen[0].sent).sort(), ["max_tokens", "messages", "model"]);
+});
+
+// --- the output-token cap ---------------------------------------------------------------------------------------------------------
+
+test("every request carries the configured output-token cap as max_tokens, and no other token or length field", async () => {
+  const { fetch, seen } = fakeFetch(() => json(text("hi")));
+  const adapter = adapterFor(fetch, external({ MODEL_MAX_OUTPUT_TOKENS: "321" }));
+  await adapter.complete(REQUEST);
+  await adapter.complete({ messages: [{ role: "user", content: "hi" }] });
+  assert.deepEqual(seen.map((s) => s.sent.max_tokens), [321, 321]);
+  for (const { sent } of seen) {
+    for (const key of Object.keys(sent)) assert.ok(["model", "messages", "tools", "max_tokens"].includes(key), key);
+    for (const other of ["max_completion_tokens", "max_output_tokens", "maxOutputTokens", "maxOutputChars", "max_length"]) assert.equal(other in sent, false, other);
+  }
+});
+
+test("the cap cannot come from the caller, the request or the model: only the configuration's value reaches the wire", async () => {
+  const smuggled = { ...REQUEST, max_tokens: 999_999, maxOutputTokens: 999_999 } as unknown as ModelRequest;
+  // Past the guard, straight into the adapter: the encoder copies listed fields only, and the cap from the adapter's configuration.
+  const direct = fakeFetch(() => json(text("hi")));
+  await adapterFor(direct.fetch).complete(smuggled, { maxOutputTokens: 999_999, max_tokens: 999_999, maxOutputChars: 999_999 } as never);
+  assert.equal(direct.seen[0].sent.max_tokens, 1024);
+  assert.equal(String(direct.seen[0].init.body).includes("999999"), false);
+  // Under the guard the request is refused outright.
+  const guarded = fakeFetch(() => json(text("hi")));
+  await assert.rejects(withModelGuard(adapterFor(guarded.fetch)).complete(smuggled), (e: unknown) => e instanceof ModelRequestError);
+  assert.equal(guarded.seen.length, 0);
+  // A model answer naming its own limit changes nothing on the next request.
+  const model = fakeFetch(() => json({ ...text("hi"), max_tokens: 999_999, usage: { prompt_tokens: 1, completion_tokens: 1, max_tokens: 999_999 } }));
+  const adapter = adapterFor(model.fetch);
+  await adapter.complete(REQUEST);
+  await adapter.complete(REQUEST);
+  assert.deepEqual(model.seen.map((s) => s.sent.max_tokens), [1024, 1024]);
+});
+
+test("the encoder refuses to build a request without a usable cap, and the adapter then sends nothing", async () => {
+  for (const cap of [undefined, 0, -1, 1.5, Number.NaN, "1024"]) {
+    assert.throws(() => encodeChatCompletion(REQUEST, { modelId: MODEL, maxOutputTokens: cap as never }), String(cap));
+  }
+  const { fetch, seen } = fakeFetch(() => json(text("hi")));
+  const driver = chatCompletionsDriver({ fetch });
+  const capless = { ...driver, encode: (request: ModelRequest, target: { modelId: string }) => driver.encode(request, { modelId: target.modelId } as never) };
+  await assert.rejects(createProviderAdapter(external(), capless).complete(REQUEST), (e: unknown) => e instanceof ModelRequestError);
+  assert.equal(seen.length, 0);
+});
+
+test("an answer cut off at the cap (finish_reason \"length\") is still refused as invalid_response, text or tool calls", async () => {
+  for (const body of [
+    completion({ role: "assistant", content: "a partial answ" }, "length", { usage: { prompt_tokens: 10, completion_tokens: 1024 } }),
+    completion({ role: "assistant", content: null, tool_calls: [toolCall("a", "calculate_tax", "{\"regime\":")] }, "length"),
+  ]) {
+    const { fetch } = fakeFetch(() => json(body));
+    assert.equal((await providerError(() => withModelGuard(adapterFor(fetch, external({ MODEL_MAX_OUTPUT_TOKENS: "1024" }))).complete(REQUEST))).code, "invalid_response");
+  }
 });
 
 // --- configuration fails closed ---------------------------------------------------------------------------------------------------
@@ -128,6 +183,9 @@ test("malformed configuration fails closed, names variables and never values, an
     [() => external({ MODEL_APPROVED_RECIPIENTS: `${RECIPIENT},recipient-b` }), "invalid_configuration", "MODEL_APPROVED_RECIPIENTS"],
     [() => external({ MODEL_TIMEOUT_MS: "999999" }), "invalid_configuration", "MODEL_TIMEOUT_MS"],
     [() => external({ ASSISTANT_MAX_TOKENS_PER_WINDOW: undefined }), "missing_configuration", "ASSISTANT_MAX_TOKENS_PER_WINDOW"],
+    [() => external({ MODEL_MAX_OUTPUT_TOKENS: undefined }), "missing_configuration", "MODEL_MAX_OUTPUT_TOKENS"],
+    [() => external({ MODEL_MAX_OUTPUT_TOKENS: "0" }), "invalid_configuration", "MODEL_MAX_OUTPUT_TOKENS"],
+    [() => external({ MODEL_MAX_OUTPUT_TOKENS: "1e3" }), "invalid_configuration", "MODEL_MAX_OUTPUT_TOKENS"],
     // The one reader a deployment uses still refuses external mode outright (ADR 0002).
     [() => readAssistantConfig(ENV), "real_data_mode_not_permitted", "ASSISTANT_ENV"],
     // A synthetic configuration can never build a provider.
@@ -274,7 +332,7 @@ test("even past the guard, the encoder copies only the listed fields: nothing el
     tools: [{ name: "calculate_tax", description: "d", parameters: {}, authorization: { consent: true } }],
     db: { url: "postgres://x" },
   } as unknown as ModelRequest;
-  const body = encodeChatCompletion(polluted, { modelId: MODEL, maxOutputChars: 10, userId: "user-1" } as never);
+  const body = encodeChatCompletion(polluted, { modelId: MODEL, maxOutputTokens: 64, maxOutputChars: 10, userId: "user-1" } as never);
   for (const leaked of ["user-1", "userId", "session", "sess", "authorization", "consent", "postgres", "maxOutputChars"]) assert.equal(body.includes(leaked), false, leaked);
 });
 

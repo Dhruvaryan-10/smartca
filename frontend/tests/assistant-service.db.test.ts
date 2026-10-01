@@ -30,7 +30,7 @@ const NOW = Date.UTC(2026, 8, 29, 12, 0, 0);
 const ENV: Record<string, string> = {
   ASSISTANT_ENABLED: "true", ASSISTANT_ENV: "external", MODEL_ENDPOINT: ENDPOINT, MODEL_API_KEY: KEY, MODEL_ID: "fixture-model-1",
   MODEL_APPROVED_RECIPIENTS: RECIPIENT, MODEL_TIMEOUT_MS: "3000", MODEL_MAX_OUTPUT_CHARS: "20000",
-  ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "20", ASSISTANT_MAX_CONCURRENT_RUNS: "1", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", ASSISTANT_RUN_RETENTION_DAYS: "400",
+  ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "20", ASSISTANT_MAX_CONCURRENT_RUNS: "1", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400",
 };
 const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...ENV, ...over });
 const BODY = { messages: ["What is my tax this year?"] };
@@ -156,6 +156,7 @@ test("the caller cannot choose profile, tools, classes, recipient, provider, lim
       { profile: "full" }, { allowedTools: [...ASSISTANT_TOOL_NAMES] }, { visibleClasses: { user_free_text: true } }, { recipient: "evil" },
       { provider: "evil" }, { model: "evil-model" }, { endpoint: "https://evil.invalid" }, { limits: { maxRunsPerWindow: 1e9 } },
       { timeoutMs: 999999 }, { userId: "someone-else" }, { authorization: { consent: "granted" } },
+      { max_tokens: 999999 }, { maxOutputTokens: 999999 }, { max_completion_tokens: 999999 },
     ]) {
       const { promise, calls } = call({ userId: u }, { ...BODY, ...extra });
       const response = await promise;

@@ -41,7 +41,7 @@ const ENV: Record<string, string> = {
   MODEL_MAX_OUTPUT_CHARS: "2000",
 };
 /** An external configuration comes only from validateExternalEnv: the reader never produces one. */
-const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...ENV, ASSISTANT_ENV: "external", ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "100", ASSISTANT_MAX_CONCURRENT_RUNS: "2", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", ASSISTANT_RUN_RETENTION_DAYS: "400", ...over });
+const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...ENV, ASSISTANT_ENV: "external", ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "100", ASSISTANT_MAX_CONCURRENT_RUNS: "2", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400", ...over });
 const INPUT = { userId: USER, userMessages: ["What does SmartCA know about my finances?"] };
 
 const grant = (over: Record<string, unknown> = {}): AssistantAuthorization =>

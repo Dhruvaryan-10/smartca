@@ -6,7 +6,8 @@
 //   -> chatCompletionsDriver: encode -> fake fetch -> decode -> tool gate -> the real calculate_tax -> egress filter
 //   -> chatCompletionsDriver again -> answer layer -> audit row -> release -> HTTP response
 //
-// What it pins: the Chat Completions wire the real driver produces across a multi-turn tool round-trip (both requests, field by field);
+// What it pins: the Chat Completions wire the real driver produces across a multi-turn tool round-trip (both requests, field by field,
+// each carrying the configured output-token cap);
 // that the tool result on the wire is exactly the egress filter's output for the run's plan; token usage summed into the audit row;
 // typed, sanitized failures (another model, 429, a transport error quoting the key, a timeout) with the right status and audit row; and
 // that every admission refusal (consent, token budget, concurrency) happens before any provider request. The platform `fetch` is
@@ -43,7 +44,7 @@ const ENV: Record<string, string> = {
   ASSISTANT_ENABLED: "true", ASSISTANT_ENV: "external", MODEL_ENDPOINT: ENDPOINT, MODEL_API_KEY: KEY, MODEL_ID: MODEL,
   MODEL_APPROVED_RECIPIENTS: RECIPIENT, MODEL_TIMEOUT_MS: "3000", MODEL_MAX_OUTPUT_CHARS: "20000",
   ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "20", ASSISTANT_MAX_CONCURRENT_RUNS: "1", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000",
-  ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", ASSISTANT_RUN_RETENTION_DAYS: "400",
+  ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400",
 };
 const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...ENV, ...over });
 const BODY = { messages: ["What is my tax this year?"] };
@@ -175,9 +176,11 @@ test("the complete path with the real driver: a tool round-trip over the Chat Co
       assert.equal(call.init.redirect, "error");
       assert.ok(call.init.signal instanceof AbortSignal);
       assert.deepEqual(call.headers, { "content-type": "application/json", authorization: `Bearer ${KEY}` });
-      // Exactly the model request's fields: no user, authorization, session, database state, credential or limit.
-      assert.deepEqual(Object.keys(call.sent).sort(), ["messages", "model", "tools"]);
+      // Exactly the model request's fields and the configured output-token cap: no user, authorization, session, database state,
+      // credential or other limit.
+      assert.deepEqual(Object.keys(call.sent).sort(), ["max_tokens", "messages", "model", "tools"]);
       assert.equal(call.sent.model, MODEL);
+      assert.equal(call.sent.max_tokens, Number(ENV.MODEL_MAX_OUTPUT_TOKENS), "the configured cap, on every model request");
       assertNoSecrets("the request body", String(call.init.body), u, granted.authorizationId);
       assert.doesNotMatch(String(call.init.body), /userId|authorizationId|session|postgres/i);
       // The plan's tools, and only those: corpus text was not authorized, so search_tax_law is not offered.

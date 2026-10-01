@@ -1,6 +1,6 @@
 # ADR 0003: Assistant run limits and run-record retention
 
-**Status:** Accepted (2026-09-30; global concurrency cap and retention added 2026-09-30)
+**Status:** Accepted (2026-09-30; global concurrency cap and retention added 2026-09-30; per-call output-token cap added 2026-10-01)
 
 ## Context
 
@@ -27,6 +27,7 @@ The external assistant path (`services/assistant/service.ts`, behind `POST /api/
     - `assistant_runs` rows hold metadata only (ids, codes, counts, tool and class names, token counts, times), never a message, answer, tool argument, tool result, credential or error text. Each row is kept for `ASSISTANT_RUN_RETENTION_DAYS` after it **started**, whatever its outcome, then deleted by the operator's scheduled job `npm run assistant:purge-runs` (`services/assistant/run-retention.ts`), in bounded batches, idempotently. The job prints counts only.
     - The retention floor (one day) is at least the longest possible limit window and far longer than any stale bound, so the job can never delete a row that a limit still counts; a test pins that relation.
     - Consent records (`assistant_authorizations`) are **not** deleted by the job: they are the record that a person agreed, kept for the life of the account. Deleting an old revoked grant could also let an older, still-valid grant decide again, silently restoring withdrawn consent. Deleting a user cascades to both tables.
+14. **A per-call output-token cap, also configuration.** An external configuration must also set `MODEL_MAX_OUTPUT_TOKENS`, the most output tokens the provider may generate in one model call, sent on every provider request (as `max_tokens` by the Chat Completions driver, the only place that wire field is named). It bounds the generation cost of each call, and so, with the 4 model calls per run, of each run. It follows the same rules as the limits above: plain decimal digits from 1 to its validation ceiling of 50,000 (`MAX_MODEL_OUTPUT_TOKENS`, the same in-code output bound `MODEL_MAX_OUTPUT_CHARS` is held to, not any provider's maximum), failing closed and naming only the variable; the provider adapter checks it again before any request. It comes only from the configuration, never from a request body, caller, tool argument or model answer. It does not change admission: the token budget still counts the usage the provider reports, not the cap, and the character cap (`MODEL_MAX_OUTPUT_CHARS`) still applies to every answer. An answer cut off at the cap (`finish_reason: "length"`) is refused, never used.
 
 ## Consequences
 
