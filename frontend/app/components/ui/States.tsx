@@ -18,8 +18,8 @@ export function EmptyState({
 }) {
   return (
     <div className={`flex flex-col items-center text-center ${compact ? "py-8" : "py-20"}`}>
-      <p className="text-[15px] font-medium text-foreground">{title}</p>
-      {description && <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-muted-foreground">{description}</p>}
+      <p className="text-subheading font-medium text-foreground">{title}</p>
+      {description && <p className="mt-1.5 max-w-sm text-body text-foreground-muted">{description}</p>}
       {action && <div className="mt-5 flex flex-wrap items-center justify-center gap-2">{action}</div>}
     </div>
   );
@@ -27,12 +27,8 @@ export function EmptyState({
 
 export function LoadingState({ label = "Loading…" }: { label?: string }) {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="flex items-center gap-3 py-10 text-sm text-muted-foreground"
-    >
-      <span className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary motion-reduce:animate-none" />
+    <div role="status" aria-live="polite" className="flex items-center gap-3 py-10 text-body text-foreground-muted">
+      <span className="h-4 w-4 animate-spin rounded-pill border-2 border-border border-t-primary motion-reduce:animate-none" />
       {label}
     </div>
   );
@@ -45,6 +41,8 @@ export function Skeleton({ className = "" }: { className?: string }) {
   return <div aria-hidden="true" className={`skeleton ${className}`} />;
 }
 
+// A failure inline where it happened: what went wrong in words, and a
+// way to try again. The danger tint and the heading say the same thing.
 export function ErrorState({
   message,
   title = "Something went wrong",
@@ -55,9 +53,9 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div role="alert" className="rounded-[var(--radius-lg)] border border-border bg-card p-5">
-      <p className="text-[15px] font-medium text-destructive">{title}</p>
-      <p className="mt-1 text-sm text-muted-foreground">{message}</p>
+    <div role="alert" className="rounded-panel border border-border bg-danger-soft p-5">
+      <p className="text-subheading font-semibold text-foreground">{title}</p>
+      <p className="mt-1 text-body text-foreground-secondary">{message}</p>
       {onRetry && (
         <Button variant="secondary" size="sm" className="mt-4" onClick={onRetry}>
           Try again

@@ -46,7 +46,7 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(function T
             onClick={() => setRevealed((v) => !v)}
             aria-pressed={revealed}
             aria-label={revealed ? "Hide password" : "Show password"}
-            className="absolute inset-y-0 right-1.5 my-auto h-8 rounded-[var(--radius-sm)] px-2.5 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="absolute inset-y-0 right-1.5 my-auto h-8 rounded-control px-2.5 text-label font-medium text-foreground-muted transition-colors duration-(--duration-fast) ease-standard hover:text-foreground focus-visible:focus-ring"
           >
             {revealed ? "Hide" : "Show"}
           </button>
