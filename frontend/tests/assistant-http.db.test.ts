@@ -40,7 +40,7 @@ const ENV: Record<string, string> = {
   ASSISTANT_ENABLED: "true", ASSISTANT_ENV: "external", MODEL_ENDPOINT: ENDPOINT, MODEL_API_KEY: KEY, MODEL_ID: "fixture-model-1",
   MODEL_APPROVED_RECIPIENTS: RECIPIENT, MODEL_TIMEOUT_MS: "3000", MODEL_MAX_OUTPUT_CHARS: "20000",
   ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "20", ASSISTANT_MAX_CONCURRENT_RUNS: "1", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000",
-  ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400",
+  ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", MODEL_WIRE_FORMAT: "openai-chat-completions", ASSISTANT_RUN_RETENTION_DAYS: "400",
 };
 const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...ENV, ...over });
 /** The stale bound the service derives from ENV: timeout 3000 ms x 4 model rounds + 60 s. */
@@ -222,6 +222,67 @@ test("an unusable body is refused as invalid_request (400) BEFORE consent is rea
     const rows = await runsOf(u);
     assert.equal(rows.length, cases.length, "every refusal is recorded, against the SESSION user");
     assert.ok(rows.every((row) => row.status === "rejected" && row.resultCode === "invalid_request" && row.authorizationId === null));
+  });
+});
+
+// --- a client that disconnects ----------------------------------------------------------------------------------------------------
+
+/** A POST carrying a client connection the test can drop. */
+function postWith(signal: AbortSignal) {
+  return new Request("http://localhost/api/assistant", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(BODY), signal, duplex: "half" } as RequestInit);
+}
+
+test("a client that disconnects while the provider is answering cancels the run: the provider request is aborted, the run is released", async () => {
+  await withUsers(1, async ([u]) => {
+    await consent(u);
+    const client = new AbortController();
+    const inner = testProvider(done);
+    let providerSignal: AbortSignal | undefined;
+    const driver = {
+      ...inner.driver,
+      transport: (request: Parameters<typeof inner.driver.transport>[0]) => {
+        providerSignal = request.signal;
+        setTimeout(() => client.abort(), 10); // the client goes away while the provider is still working
+        return new Promise<never>(() => undefined);
+      },
+    };
+    const r = await send(postWith(client.signal), { userId: u, driver });
+    assert.deepEqual([r.status, codeOf(r.body)], [422, "request_cancelled"]);
+    assert.equal(providerSignal?.aborted, true, "the in-flight provider request was aborted, not left running");
+    noSecretsIn(r.text, u);
+    const [row] = await runsOf(u);
+    assert.deepEqual([row.status, row.resultCode, row.failureKind, row.modelCalls, row.toolCalls], ["failed", "request_cancelled", "ModelProviderError:aborted", 1, 0]);
+    assert.deepEqual([row.inputTokens, row.outputTokens], [null, null], "no usage is invented for a cancelled call");
+    await noRunning(u);
+  });
+});
+
+test("a client that disconnects during a tool round gets no further provider call; the first call's usage is still counted", async () => {
+  await withUsers(1, async ([u]) => {
+    await consent(u);
+    const client = new AbortController();
+    const inner = testProvider(toolStep(["c1", "calculate_tax", { regime: "old", ...TAX }]), done);
+    // Gone right after the tool ran (its metadata event is emitted once it finishes) and before the next model call.
+    const onEvent = (e: AssistantEvent) => {
+      if (e.type === "tool_call") client.abort();
+    };
+    const r = await send(postWith(client.signal), { userId: u, driver: inner.driver, onEvent });
+    assert.deepEqual([r.status, codeOf(r.body)], [422, "request_cancelled"]);
+    assert.equal(inner.calls.length, 1, "no second provider request after the client left");
+    const [row] = await runsOf(u);
+    assert.deepEqual([row.status, row.resultCode, row.toolCalls, row.toolsCalled], ["failed", "request_cancelled", 1, ["calculate_tax"]]);
+    assert.deepEqual([row.inputTokens, row.outputTokens], [100, 20], "the answered call is counted; the cancelled one adds nothing");
+    await noRunning(u);
+  });
+});
+
+test("a request whose client is already gone reaches no provider and holds no slot", async () => {
+  await withUsers(1, async ([u]) => {
+    await consent(u);
+    const r = await send(postWith(AbortSignal.abort()), { userId: u });
+    assert.notEqual(r.status, 200);
+    assert.equal(r.calls.length, 0, "nothing was sent");
+    await noRunning(u);
   });
 });
 

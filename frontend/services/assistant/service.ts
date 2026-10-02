@@ -30,6 +30,7 @@ import { OrchestratorError } from "./orchestrator";
 import type { ToolActivity } from "./orchestrator";
 import { readProviderTarget } from "./provider";
 import type { ProviderDriver } from "./provider";
+import { providerDriverFor } from "./provider-registry";
 import { toAssistantApiError } from "./api-contract";
 import type { AssistantApiResponse } from "./api-contract";
 import { findAssistantAuthorization } from "./authorization-store";
@@ -48,14 +49,23 @@ export type AssistantServiceDeps = {
    * is refused, and recorded, exactly like one that is read but invalid.
    */
   config: AssistantConfig | (() => AssistantConfig);
-  /** The provider's wire parts, chosen by server code. It never chooses the endpoint, model or recipient. */
-  driver: ProviderDriver;
+  /**
+   * The provider's wire parts. Defaults to the driver registry's choice for the configuration's MODEL_WIRE_FORMAT
+   * (provider-registry.ts), made at step 3, so an unusable format is refused and recorded before consent is read. Tests may pass
+   * another (a recording provider). It never chooses the endpoint, model or recipient.
+   */
+  driver?: ProviderDriver;
   /** Milliseconds since the epoch; defaults to the server clock. */
   now?: () => number;
   /** Where metadata-only events go. None by default. */
   onEvent?: AssistantEventSink;
   /** The run limiter. Defaults to the PostgreSQL limiter built from the configuration's limits; tests may pass another. */
   limiter?: RunLimiter;
+  /**
+   * Cancels the run from outside: the HTTP boundary passes the client's connection (request.signal). Once aborted, no further model call
+   * is made and an in-flight one is aborted (the model guard), and the run ends as request_cancelled, released like any other.
+   */
+  signal?: AbortSignal;
 };
 
 /** The only fields a request body may have. */
@@ -119,8 +129,10 @@ export async function handleAssistantRequest(session: unknown, body: unknown, de
   // 3. The configuration decides the recipient; the configuration's limits decide how much the person may run.
   let target: ReturnType<typeof readProviderTarget>;
   let limiter: RunLimiter;
+  let driver: ProviderDriver;
   try {
     target = readProviderTarget(typeof deps.config === "function" ? deps.config() : deps.config);
+    driver = deps.driver ?? providerDriverFor(target.config);
     // A limiter without a complete set of limits refuses to exist: the request fails closed here, before consent is even read.
     limiter = deps.limiter ?? createPostgresRunLimiter(target.config.limits, { mode: "external", staleAfterMs: (policyFromConfig(target.config).runBudgetMs ?? 0) + STALE_RUN_GRACE_MS });
   } catch (error) {
@@ -197,7 +209,7 @@ export async function handleAssistantRequest(session: unknown, body: unknown, de
       emit({ type: "tool_call", requestId, runId, tool: activity.tool, outcome: activity.outcome, reason: activity.reason });
     };
     try {
-      const answer = await askExternal(target.config, { userId, userMessages: messages }, { driver: deps.driver, authorization, now: now(), onModelCall, onToolActivity });
+      const answer = await askExternal(target.config, { userId, userMessages: messages }, { driver, authorization, now: now(), onModelCall, onToolActivity, ...(deps.signal === undefined ? {} : { signal: deps.signal }) });
       response = Object.freeze({ ok: true as const, answer });
     } catch (error) {
       failure = error;

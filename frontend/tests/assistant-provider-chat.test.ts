@@ -11,13 +11,13 @@ import path from "node:path";
 import { inspect } from "node:util";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_PROVIDER_RESPONSE_BYTES, chatCompletionsDriver, encodeChatCompletion } from "../services/assistant/provider-chat-completions";
+import { MAX_PROVIDER_RESPONSE_BYTES, chatCompletionsDriver, encodeChatCompletion, readChatCompletionUsage } from "../services/assistant/provider-chat-completions";
 import type { FetchLike } from "../services/assistant/provider-chat-completions";
 import { createProviderAdapter } from "../services/assistant/provider";
 import { AssistantConfigError, readAssistantConfig, validateExternalEnv } from "../services/assistant/config";
 import type { AssistantConfig } from "../services/assistant/config";
 import { ModelProviderError, ModelRequestError, ModelResponseError, withModelGuard } from "../services/assistant/model";
-import type { ModelRequest } from "../services/assistant/model";
+import type { ModelCallInfo, ModelRequest } from "../services/assistant/model";
 
 const FRONTEND = path.resolve(__dirname, "..");
 const KEY = "test-key-NOT-A-REAL-SECRET-0005";
@@ -27,7 +27,7 @@ const ENDPOINT = "https://provider.invalid/v1/chat/completions";
 const ENV: Record<string, string> = {
   ASSISTANT_ENABLED: "true", ASSISTANT_ENV: "external", MODEL_ENDPOINT: ENDPOINT, MODEL_API_KEY: KEY, MODEL_ID: MODEL,
   MODEL_APPROVED_RECIPIENTS: RECIPIENT, MODEL_TIMEOUT_MS: "300", MODEL_MAX_OUTPUT_CHARS: "500",
-  ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "100", ASSISTANT_MAX_CONCURRENT_RUNS: "2", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400",
+  ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "100", ASSISTANT_MAX_CONCURRENT_RUNS: "2", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", MODEL_WIRE_FORMAT: "openai-chat-completions", ASSISTANT_RUN_RETENTION_DAYS: "400",
 };
 const external = (over: Record<string, string | undefined> = {}): AssistantConfig => validateExternalEnv({ ...ENV, ...over });
 const dump = (e: unknown) => [String(e), JSON.stringify(e), inspect(e, { depth: 5, showHidden: true }), (e as Error)?.stack ?? ""].join("\n");
@@ -274,9 +274,9 @@ test("a malformed answer is `invalid_response`", async () => {
   }
 });
 
-test("an oversized answer is not read to the end, declared or streamed", async () => {
+test("an oversized answer is not read to the end, declared or streamed, and is an unusable answer (invalid_response), not an outage", async () => {
   const declared = fakeFetch(() => new Response("{}", { status: 200, headers: { "content-length": String(MAX_PROVIDER_RESPONSE_BYTES + 1) } }));
-  assert.equal((await providerError(() => adapterFor(declared.fetch).complete(REQUEST))).code, "unavailable");
+  assert.equal((await providerError(() => adapterFor(declared.fetch).complete(REQUEST))).code, "invalid_response");
 
   let pulled = 0;
   const chunk = new Uint8Array(64 * 1024).fill(32);
@@ -287,8 +287,92 @@ test("an oversized answer is not read to the end, declared or streamed", async (
     },
   });
   const streamed = fakeFetch(() => new Response(stream, { status: 200 }));
-  assert.equal((await providerError(() => adapterFor(streamed.fetch).complete(REQUEST))).code, "unavailable");
+  assert.equal((await providerError(() => adapterFor(streamed.fetch).complete(REQUEST))).code, "invalid_response");
   assert.ok(pulled * chunk.byteLength <= MAX_PROVIDER_RESPONSE_BYTES + 2 * chunk.byteLength, "reading stopped at the limit");
+});
+
+// --- usage of a refused answer ---------------------------------------------------------------------------------------------------
+
+/** Runs one guarded call and returns its outcome and the one onCall report's token counts. */
+async function usageOfCall(respond: (init: RequestInit) => Response | Promise<Response>, policy: Record<string, unknown> = {}, config = external()) {
+  const { fetch } = fakeFetch(respond);
+  const infos: ModelCallInfo[] = [];
+  let outcome = "ok";
+  try {
+    await withModelGuard(adapterFor(fetch, config), { ...policy, onCall: (i) => infos.push(i) }).complete(REQUEST);
+  } catch (error) {
+    assert.equal(dump(error).includes(KEY), false);
+    for (const leaked of ["999", "prompt_tokens", "completion_tokens", "partial answ"]) assert.equal(dump(error).includes(leaked), false, `the error carries nothing of the body (${leaked})`);
+    outcome = (error as { code?: string }).code ?? (error as Error).name;
+  }
+  assert.equal(infos.length, 1, "exactly one report per call");
+  return { outcome, tokens: [infos[0].inputTokens, infos[0].outputTokens] };
+}
+const withUsage = (usage: unknown) => ({ usage });
+
+test("an accepted answer still records its usage exactly as before", async () => {
+  assert.deepEqual(await usageOfCall(() => json(text("hi"))), { outcome: "ok", tokens: [10, 2] });
+});
+
+test("an answer cut off at the cap (\"length\") is refused, and the configured model's reported usage is still recorded", async () => {
+  const cut = completion({ role: "assistant", content: "a partial answ" }, "length", withUsage({ prompt_tokens: 250, completion_tokens: 32, total_tokens: 282 }));
+  assert.deepEqual(await usageOfCall(() => json(cut)), { outcome: "invalid_response", tokens: [250, 32] });
+  const cutCalls = completion({ role: "assistant", content: null, tool_calls: [toolCall("a", "calculate_tax", "{")] }, "length", withUsage({ prompt_tokens: 40, completion_tokens: 1024 }));
+  assert.deepEqual(await usageOfCall(() => json(cutCalls)), { outcome: "invalid_response", tokens: [40, 1024] });
+});
+
+test("a filtered answer, a refusal and other refused answers from the configured model keep their reported usage", async () => {
+  const cases: Array<[string, unknown]> = [
+    ["content_filter", completion({ role: "assistant", content: "" }, "content_filter", withUsage({ prompt_tokens: 30, completion_tokens: 0 }))],
+    ["refusal", completion({ role: "assistant", content: null, refusal: "No." }, "stop", withUsage({ prompt_tokens: 31, completion_tokens: 4 }))],
+    ["no choices", { model: MODEL, choices: [], usage: { prompt_tokens: 32, completion_tokens: 5 } }],
+    ["not from the assistant", completion({ role: "user", content: "hi" }, "stop", withUsage({ prompt_tokens: 33, completion_tokens: 6 }))],
+    ["an unknown finish", completion({ role: "assistant", content: "x" }, "weird", withUsage({ prompt_tokens: 34, completion_tokens: 7 }))],
+  ];
+  for (const [name, body] of cases) {
+    const { usage } = body as { usage: { prompt_tokens: number; completion_tokens: number } };
+    assert.deepEqual(await usageOfCall(() => json(body)), { outcome: "invalid_response", tokens: [usage.prompt_tokens, usage.completion_tokens] }, name);
+  }
+  // Refused by the guard rather than the driver: an answer longer than the output cap.
+  assert.deepEqual(await usageOfCall(() => json(text("x".repeat(600))), { maxOutputChars: 500 }), { outcome: "output_too_large", tokens: [10, 2] });
+});
+
+test("usage is not trusted from another model, from a body naming no model, or from a body that is not a JSON object", async () => {
+  const billed = { prompt_tokens: 999, completion_tokens: 999 };
+  for (const model of ["unexpected-model", `${MODEL}-2026-01-01`, "", undefined, 5]) {
+    assert.deepEqual(await usageOfCall(() => json(completion({ role: "assistant", content: "hi" }, "stop", { model, usage: billed }))), { outcome: "invalid_response", tokens: [null, null] }, String(model));
+    assert.deepEqual(await usageOfCall(() => json(completion({ role: "assistant", content: "x" }, "length", { model, usage: billed }))), { outcome: "invalid_response", tokens: [null, null] }, `${String(model)} cut off`);
+  }
+  for (const body of ["not json {\"usage\":{\"prompt_tokens\":999}", "[1,2]", "null"]) {
+    assert.deepEqual(await usageOfCall(() => new Response(body, { status: 200 })), { outcome: "invalid_response", tokens: [null, null] }, body);
+  }
+});
+
+test("malformed usage is not trusted: only whole, non-negative counts within the model contract's bound are kept, field by field", async () => {
+  const malformed: unknown[] = [
+    "lots", 42, [250, 32], null,
+    { prompt_tokens: "250", completion_tokens: "32" }, { prompt_tokens: -1, completion_tokens: -5 }, { prompt_tokens: 1.5, completion_tokens: 2.5 },
+    { prompt_tokens: Number.MAX_SAFE_INTEGER, completion_tokens: 2_000_000_000 }, { input_tokens: 250, output_tokens: 32 }, {},
+  ];
+  for (const usage of malformed) {
+    assert.deepEqual(await usageOfCall(() => json(completion({ role: "assistant", content: "x" }, "length", { usage }))), { outcome: "invalid_response", tokens: [null, null] }, JSON.stringify(usage));
+  }
+  // The same per-field rule as an accepted answer's usage: a valid count beside a malformed one is kept, the malformed one is not.
+  assert.deepEqual(await usageOfCall(() => json(completion({ role: "assistant", content: "x" }, "length", withUsage({ prompt_tokens: 250, completion_tokens: "32" })))), { outcome: "invalid_response", tokens: [250, null] });
+});
+
+test("a timeout, a transport failure or an error status records no usage: nothing is invented, estimated or charged at the cap", async () => {
+  assert.deepEqual(await usageOfCall(hanging, { timeoutMs: 30 }, external({ MODEL_MAX_OUTPUT_TOKENS: "4096" })), { outcome: "timeout", tokens: [null, null] });
+  assert.deepEqual(await usageOfCall(() => Promise.reject(new TypeError("fetch failed"))), { outcome: "unavailable", tokens: [null, null] });
+  assert.deepEqual(await usageOfCall(() => json({ ...text("hi"), usage: { prompt_tokens: 999, completion_tokens: 999 } }, 429)), { outcome: "rate_limited", tokens: [null, null] });
+});
+
+test("readChatCompletionUsage reads the model and counts without judging the answer, and nothing else", () => {
+  assert.deepEqual(readChatCompletionUsage(JSON.stringify(completion({ role: "assistant", content: "x" }, "length", withUsage({ prompt_tokens: 7, completion_tokens: 8 })))), { model: MODEL, inputTokens: 7, outputTokens: 8 });
+  assert.deepEqual(readChatCompletionUsage(JSON.stringify({ model: "other", usage: { prompt_tokens: 1 } })), { model: "other", inputTokens: 1 }, "the adapter, not the reader, decides whether the model is trusted");
+  for (const body of ["", "nope", "[]", JSON.stringify({ usage: { prompt_tokens: 1 } }), JSON.stringify({ model: MODEL }), JSON.stringify({ model: MODEL, usage: { prompt_tokens: -1 } })]) {
+    assert.equal(readChatCompletionUsage(body), undefined, body);
+  }
 });
 
 // --- an unexpected model or recipient ------------------------------------------------------------------------------------------

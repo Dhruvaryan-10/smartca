@@ -50,6 +50,19 @@ export function testProvider(...steps: WireStep[]): { driver: ProviderDriver; ca
         ...(parsed.outputTokens === undefined ? {} : { outputTokens: parsed.outputTokens }),
       };
     },
+    // Like the real driver: the model and counts the body states, judging nothing; a body naming no model states no usage.
+    readUsage: (body: string) => {
+      try {
+        const parsed = JSON.parse(body) as { model?: unknown; inputTokens?: unknown; outputTokens?: unknown };
+        if (typeof parsed?.model !== "string") return undefined;
+        const whole = (v: unknown) => (typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : undefined);
+        const [inputTokens, outputTokens] = [whole(parsed.inputTokens), whole(parsed.outputTokens)];
+        if (inputTokens === undefined && outputTokens === undefined) return undefined;
+        return { model: parsed.model, ...(inputTokens === undefined ? {} : { inputTokens }), ...(outputTokens === undefined ? {} : { outputTokens }) };
+      } catch {
+        return undefined;
+      }
+    },
     authHeaders: (apiKey) => ({ authorization: `Bearer ${apiKey.reveal()}` }),
     transport: async (request: ProviderWireRequest) => {
       calls.push({

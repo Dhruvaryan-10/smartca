@@ -63,7 +63,13 @@ export type ModelResponse = ({ kind: "text"; text: string } | { kind: "tool_call
  * What the guard tells an adapter about THIS call (the request itself stays data only). An adapter should honour the signal and
  * stop early, but nothing depends on it: the guard enforces the deadline and the size limit even when it does not.
  */
-export type ModelCallOptions = { signal?: AbortSignal; timeoutMs?: number; maxOutputChars?: number };
+export type ModelCallOptions = { signal?: AbortSignal; timeoutMs?: number; maxOutputChars?: number; onUsage?: (usage: ModelCallUsage) => void };
+
+/**
+ * Token usage an adapter can vouch for on THIS call, reported as soon as the provider's answer arrives and before it is judged, so that
+ * an answer the guard (or the adapter) then refuses is still counted. Counts only: never content, never anything from the answer.
+ */
+export type ModelCallUsage = { inputTokens?: number; outputTokens?: number };
 
 export interface ModelAdapter {
   complete(request: ModelRequest, options?: ModelCallOptions): Promise<ModelResponse>;
@@ -388,7 +394,7 @@ function checkPolicy(policy: ModelGuardPolicy): void {
  * racing the call, so an adapter that ignores the signal is still cut off. Nothing is left running: the timer and the listener are
  * always removed.
  */
-async function callWithLimits(inner: ModelAdapter, request: ModelRequest, policy: ModelGuardPolicy): Promise<unknown> {
+async function callWithLimits(inner: ModelAdapter, request: ModelRequest, policy: ModelGuardPolicy, onUsage: (usage: ModelCallUsage) => void): Promise<unknown> {
   if (policy.signal?.aborted) throw new ModelProviderError("aborted");
   const budgetLeft = policy.deadlineAt === undefined ? Number.POSITIVE_INFINITY : policy.deadlineAt - Date.now();
   if (budgetLeft <= 0) throw new ModelProviderError("budget_exceeded");
@@ -418,6 +424,7 @@ async function callWithLimits(inner: ModelAdapter, request: ModelRequest, policy
       signal: controller.signal,
       ...(Number.isFinite(limit) ? { timeoutMs: Math.ceil(limit) } : {}),
       ...(policy.maxOutputChars === undefined ? {} : { maxOutputChars: policy.maxOutputChars }),
+      onUsage,
     };
     return await Promise.race([inner.complete(request, options), stop]);
   } finally {
@@ -425,6 +432,9 @@ async function callWithLimits(inner: ModelAdapter, request: ModelRequest, policy
     if (policy.signal && onAbort) policy.signal.removeEventListener("abort", onAbort);
   }
 }
+
+/** A vouched count under the same rule as a response's own metadata (tokenCount), but never throwing: anything else is no count. */
+const vouchedCount = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) && v >= 0 && v <= MAX_TOKEN_COUNT ? v : null);
 
 const outcomeOf = (error: unknown): ModelCallInfo["outcome"] =>
   error instanceof ModelProviderError ? error.code : error instanceof ModelRequestError ? "invalid_request" : error instanceof ModelResponseError ? "invalid_response" : "error";
@@ -435,6 +445,12 @@ const outcomeOf = (error: unknown): ModelCallInfo["outcome"] =>
  * them; an answer longer than the limit is refused; and, when an allow-list is set, an answer from any other recipient (or from
  * none) fails closed BEFORE its content is used. Every one of those is a typed ModelProviderError. A provider's own other failure
  * is not caught: it propagates to whoever is orchestrating, which sanitises it.
+ *
+ * Token counts: an accepted answer's come from its metadata, as always. A refused answer's come only from usage the adapter vouched for
+ * through `onUsage` before the answer was judged (the provider adapter does so only for an answer naming the configured model), so a
+ * refused answer the provider billed is still counted, once, in the one onCall report of the call. Nothing is invented: a call that
+ * produced no vouched usage (a timeout, a transport failure, another model) reports none, and usage reported after the call has
+ * settled is ignored.
  */
 export function withModelGuard(inner: ModelAdapter, policy: ModelGuardPolicy = {}): ModelAdapter {
   checkPolicy(policy);
@@ -442,8 +458,15 @@ export function withModelGuard(inner: ModelAdapter, policy: ModelGuardPolicy = {
     complete: async (request) => {
       const started = Date.now();
       const info: ModelCallInfo = { recipient: null, model: null, inputTokens: null, outputTokens: null, durationMs: 0, outcome: "ok" };
+      let settled = false;
+      let vouched: { inputTokens: number | null; outputTokens: number | null } | null = null;
+      const onUsage = (usage: ModelCallUsage) => {
+        if (settled || !isPlainObject(usage)) return;
+        const counts = { inputTokens: vouchedCount(usage.inputTokens), outputTokens: vouchedCount(usage.outputTokens) };
+        vouched = counts.inputTokens === null && counts.outputTokens === null ? null : counts;
+      };
       try {
-        const raw = await callWithLimits(inner, assertModelRequest(request), policy);
+        const raw = await callWithLimits(inner, assertModelRequest(request), policy, onUsage);
         // An oversized text is refused as such even when it is also over the generic limit.
         if (policy.maxOutputChars !== undefined && isPlainObject(raw) && raw.kind === "text" && typeof raw.text === "string" && raw.text.length > policy.maxOutputChars) {
           throw new ModelProviderError("output_too_large");
@@ -462,8 +485,15 @@ export function withModelGuard(inner: ModelAdapter, policy: ModelGuardPolicy = {
         return response;
       } catch (error) {
         info.outcome = outcomeOf(error);
+        // A refused answer: count what the adapter vouched for, unless the answer's own (validated) counts were already taken.
+        const counted = vouched as { inputTokens: number | null; outputTokens: number | null } | null; // assigned by onUsage, a closure
+        if (counted !== null && info.inputTokens === null && info.outputTokens === null) {
+          info.inputTokens = counted.inputTokens;
+          info.outputTokens = counted.outputTokens;
+        }
         throw error;
       } finally {
+        settled = true;
         info.durationMs = Date.now() - started;
         policy.onCall?.({ ...info });
       }

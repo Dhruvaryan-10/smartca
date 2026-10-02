@@ -9,7 +9,8 @@
 // What it pins: the Chat Completions wire the real driver produces across a multi-turn tool round-trip (both requests, field by field,
 // each carrying the configured output-token cap);
 // that the tool result on the wire is exactly the egress filter's output for the run's plan; token usage summed into the audit row;
-// typed, sanitized failures (another model, 429, a transport error quoting the key, a timeout) with the right status and audit row; and
+// typed, sanitized failures (another model, 429, a transport error quoting the key, a timeout) with the right status and audit row;
+// the configured model's reported usage on a refused answer (cut off, filtered) recorded and counted toward the budget exactly once; and
 // that every admission refusal (consent, token budget, concurrency) happens before any provider request. The platform `fetch` is
 // replaced by a tripwire for the whole file, so no request can leave the process. Throwaway users, deleted after each test.
 import "../db/load-env";
@@ -44,7 +45,7 @@ const ENV: Record<string, string> = {
   ASSISTANT_ENABLED: "true", ASSISTANT_ENV: "external", MODEL_ENDPOINT: ENDPOINT, MODEL_API_KEY: KEY, MODEL_ID: MODEL,
   MODEL_APPROVED_RECIPIENTS: RECIPIENT, MODEL_TIMEOUT_MS: "3000", MODEL_MAX_OUTPUT_CHARS: "20000",
   ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "20", ASSISTANT_MAX_CONCURRENT_RUNS: "1", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000",
-  ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400",
+  ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", MODEL_WIRE_FORMAT: "openai-chat-completions", ASSISTANT_RUN_RETENTION_DAYS: "400",
 };
 const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...ENV, ...over });
 const BODY = { messages: ["What is my tax this year?"] };
@@ -141,7 +142,9 @@ async function assertFailedRun(userId: string, r: Awaited<ReturnType<typeof send
   assert.equal(rows.length, 1);
   const [row] = rows;
   assert.deepEqual([row.status, row.resultCode, row.failureKind, row.modelCalls, row.toolCalls], ["failed", code, failureKind, 1, 0]);
-  assert.deepEqual([row.inputTokens, row.outputTokens], [null, null], "a refused answer's token counts are not taken from it");
+  // Every caller of this helper has no TRUSTED usage: another model's answer, an error status (body never read), a transport failure or a
+  // timeout. A refused answer from the configured model does record its usage (the tests after the failure group).
+  assert.deepEqual([row.inputTokens, row.outputTokens], [null, null], "no usage is taken from another model, invented, or charged at the cap");
   assertNoSecrets("the response", r.text, userId);
   assertNoSecrets("the run row", JSON.stringify(row));
   assertNoSecrets("the events", JSON.stringify(r.events), userId);
@@ -286,6 +289,75 @@ test("a provider that never answers is 504 provider_timeout at the configured de
     assert.equal(provider.seen[0].init.signal?.aborted, true, "the request was aborted, not left running");
     await assertFailedRun(u, r, "provider_timeout", "ModelProviderError:timeout");
     assert.equal(r.events.find((e) => e.type === "timeout")?.type, "timeout");
+  });
+});
+
+// --- refused answers the configured provider billed: their usage is recorded ---------------------------------------------------------
+
+const cutOff = (usage: { prompt_tokens: number; completion_tokens: number }, finish = "length"): Step => () =>
+  completion({ role: "assistant", content: finish === "content_filter" ? "" : "Your tax liability under the old regime is" }, finish, usage);
+
+test("an answer cut off at the cap is 502 provider_invalid_response, and the configured model's reported usage is in the run row", async () => {
+  await withUser(async (u) => {
+    await consent(u);
+    const provider = fakeProvider(cutOff({ prompt_tokens: 250, completion_tokens: 32 }));
+    const r = await send(u, provider);
+    assert.deepEqual([r.status, codeOf(r.body)], [502, "provider_invalid_response"]);
+    assert.equal(r.body.ok, false, "no answer is returned");
+    assert.doesNotMatch(r.text, /liability|250|prompt_tokens|usage/, "nothing of the provider's answer or usage reaches the client");
+    const rows = await runsOf(u);
+    assert.equal(rows.length, 1);
+    const [row] = rows;
+    assert.deepEqual([row.status, row.resultCode, row.failureKind, row.modelCalls, row.toolCalls], ["failed", "provider_invalid_response", "ModelProviderError:invalid_response", 1, 0]);
+    assert.deepEqual([row.inputTokens, row.outputTokens], [250, 32]);
+    assert.deepEqual(r.events.flatMap((e) => (e.type === "model_call" ? [[e.outcome, e.inputTokens, e.outputTokens]] : [])), [["invalid_response", 250, 32]]);
+    assertNoSecrets("the response", r.text, u);
+    assertNoSecrets("the run row", JSON.stringify(row));
+  });
+});
+
+test("a filtered answer is refused the same way, and its reported usage is recorded", async () => {
+  await withUser(async (u) => {
+    await consent(u);
+    const r = await send(u, fakeProvider(cutOff({ prompt_tokens: 120, completion_tokens: 0 }, "content_filter")));
+    assert.deepEqual([r.status, codeOf(r.body)], [502, "provider_invalid_response"]);
+    const [row] = await runsOf(u);
+    assert.deepEqual([row.status, row.inputTokens, row.outputTokens], ["failed", 120, 0]);
+  });
+});
+
+test("a refusal on the second call of a tool round-trip: each call's usage is counted once, and the run's total is their sum", async () => {
+  await withUser(async (u) => {
+    await consent(u, CLASSES_WITHOUT_CORPUS);
+    const provider = fakeProvider(toolCallReply(), cutOff({ prompt_tokens: 150, completion_tokens: 40 }));
+    const r = await send(u, provider);
+    assert.deepEqual([r.status, codeOf(r.body), provider.seen.length], [502, "provider_invalid_response", 2]);
+    // Both requests still carried the configured cap.
+    assert.deepEqual(provider.seen.map((s) => s.sent.max_tokens), [Number(ENV.MODEL_MAX_OUTPUT_TOKENS), Number(ENV.MODEL_MAX_OUTPUT_TOKENS)]);
+    const [row] = await runsOf(u);
+    assert.deepEqual([row.status, row.modelCalls, row.toolCalls, row.toolsCalled], ["failed", 2, 1, ["calculate_tax"]]);
+    assert.deepEqual([row.inputTokens, row.outputTokens], [100 + 150, 20 + 40]);
+    assert.deepEqual(r.events.flatMap((e) => (e.type === "model_call" ? [[e.outcome, e.inputTokens, e.outputTokens]] : [])), [["ok", 100, 20], ["invalid_response", 150, 40]]);
+  });
+});
+
+test("a refused answer's usage counts toward the token budget exactly once: neither missed nor counted twice", async () => {
+  await withUser(async (u) => {
+    await consent(u);
+    // 283 tokens: refused at 283 or more. 282 + 1 = 283 only if each refused run is counted exactly once.
+    const config = external({ ASSISTANT_MAX_TOKENS_PER_WINDOW: "283" });
+    const first = await send(u, fakeProvider(cutOff({ prompt_tokens: 250, completion_tokens: 32 })), config);
+    assert.equal(codeOf(first.body), "provider_invalid_response");
+    // If it were counted twice (564), this run would be refused before reaching the provider.
+    const secondProvider = fakeProvider(cutOff({ prompt_tokens: 1, completion_tokens: 0 }));
+    const second = await send(u, secondProvider, config);
+    assert.deepEqual([codeOf(second.body), secondProvider.seen.length], ["provider_invalid_response", 1], "admitted: 282 < 283");
+    // If it were not counted at all (1), this run would be admitted.
+    const thirdProvider = fakeProvider(finalReply);
+    const third = await send(u, thirdProvider, config);
+    assert.deepEqual([third.status, codeOf(third.body), thirdProvider.seen.length], [429, "usage_budget_exceeded", 0]);
+    const rows = await runsOf(u);
+    assert.equal(rows.reduce((sum, row) => sum + (row.inputTokens ?? 0) + (row.outputTokens ?? 0), 0), 283);
   });
 });
 

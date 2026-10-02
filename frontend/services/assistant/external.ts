@@ -53,6 +53,8 @@ export type ExternalRunOptions = {
   onToolActivity?: (activity: ToolActivity) => void;
   /** The plan's audit record, once the run is authorized and before the model is called. Metadata only. */
   onAccessPlanned?: (audit: AccessAuditRecord) => void;
+  /** Cancels the run from outside (the client went away): the model guard makes no further call and aborts an in-flight one. */
+  signal?: AbortSignal;
 };
 
 export async function askExternal(config: AssistantConfig, input: AskInput, options: ExternalRunOptions): Promise<Answer> {
@@ -81,6 +83,7 @@ export async function askExternal(config: AssistantConfig, input: AskInput, opti
       ...policyFromConfig(target),
       approvedRecipients: [...plan.approvedRecipients],
       ...(options.onModelCall === undefined ? {} : { onCall: options.onModelCall }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     },
   });
 }

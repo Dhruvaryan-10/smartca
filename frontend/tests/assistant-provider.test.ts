@@ -12,6 +12,7 @@ import { AssistantConfigError, MAX_MODEL_OUTPUT_TOKENS, readAssistantConfig, val
 import type { AssistantConfig } from "../services/assistant/config";
 import { ModelProviderError, ModelRequestError, withModelGuard } from "../services/assistant/model";
 import type { ModelErrorCode, ModelRequest } from "../services/assistant/model";
+import { toAssistantApiError } from "../services/assistant/api-contract";
 import { testProvider } from "./helpers-provider";
 
 const FRONTEND = path.resolve(__dirname, "..");
@@ -22,7 +23,7 @@ const base: Record<string, string> = {
   ASSISTANT_ENABLED: "true", ASSISTANT_ENV: "synthetic", MODEL_ENDPOINT: ENDPOINT, MODEL_API_KEY: KEY, MODEL_ID: "fixture-model-1",
   MODEL_APPROVED_RECIPIENTS: RECIPIENT, MODEL_TIMEOUT_MS: "300", MODEL_MAX_OUTPUT_CHARS: "500",
 };
-const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...base, ASSISTANT_ENV: "external", ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "100", ASSISTANT_MAX_CONCURRENT_RUNS: "2", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400", ...over });
+const external = (over: Record<string, string> = {}): AssistantConfig => validateExternalEnv({ ...base, ASSISTANT_ENV: "external", ASSISTANT_RATE_WINDOW_SECONDS: "3600", ASSISTANT_MAX_RUNS_PER_WINDOW: "100", ASSISTANT_MAX_CONCURRENT_RUNS: "2", ASSISTANT_MAX_TOKENS_PER_WINDOW: "1000000", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100", MODEL_MAX_OUTPUT_TOKENS: "1024", MODEL_WIRE_FORMAT: "openai-chat-completions", ASSISTANT_RUN_RETENTION_DAYS: "400", ...over });
 const REQUEST: ModelRequest = { messages: [{ role: "system", content: "s" }, { role: "user", content: "What is my tax?" }], tools: [] };
 const dump = (e: unknown) => [String(e), JSON.stringify(e), inspect(e, { depth: 5, showHidden: true }), (e as Error)?.stack ?? ""].join("\n");
 
@@ -130,6 +131,25 @@ test("a transport that throws is unavailable, and what it threw (which quoted th
   assert.equal(error.code, "unavailable");
 });
 
+test("only the NAME of what a transport throws is read: a timeout is timeout, an oversized answer is invalid_response (not retryable), anything else unavailable", async () => {
+  const thrown: Array<[unknown, ModelErrorCode, boolean]> = [
+    [Object.assign(new Error(`timed out ${KEY}`), { name: "TimeoutError" }), "timeout", true],
+    [Object.assign(new Error(`too large ${KEY}`), { name: "ResponseTooLarge" }), "invalid_response", false],
+    [new TypeError(`fetch failed ${KEY}`), "unavailable", true],
+    [Object.assign(new Error(`aborted ${KEY}`), { name: "AbortError" }), "unavailable", true],
+    [`ResponseTooLarge ${KEY}`, "unavailable", true],
+    [null, "unavailable", true],
+  ];
+  for (const [error, code, retryable] of thrown) {
+    const { driver } = testProvider();
+    const throwing = { ...driver, transport: async () => Promise.reject(error) };
+    const failure = await providerError(() => createProviderAdapter(external(), throwing).complete(REQUEST));
+    assert.equal(failure.code, code, String((error as Error)?.name ?? error));
+    // What a client is told: an answer that came back too large is not worth retrying; an outage or a timeout may be.
+    assert.equal(toAssistantApiError(failure).retryable, retryable, code);
+  }
+});
+
 test("a malformed or substituted answer is invalid_response: unparsable, not an object, or from another model", async () => {
   for (const step of [{ status: 200, body: "not json" }, { status: 200, body: JSON.stringify({ reply: "text" }) }, { reply: { kind: "text", text: "hi" }, model: "some-other-model" }]) {
     const { driver } = testProvider(step as never);
@@ -166,6 +186,49 @@ test("under the model guard: a hanging provider times out, an oversized answer i
   const infos: unknown[] = [];
   await withModelGuard(createProviderAdapter(external(), counted.driver), { approvedRecipients: [RECIPIENT], onCall: (i) => infos.push(i) }).complete(REQUEST);
   assert.deepEqual(infos.map((i) => { const { durationMs: _d, ...rest } = i as { durationMs: number }; void _d; return rest; }), [{ recipient: RECIPIENT, model: "fixture-model-1", inputTokens: 12, outputTokens: 3, outcome: "ok" }]);
+});
+
+// --- usage of a refused answer -----------------------------------------------------------------------------------------------------
+
+test("the adapter vouches for usage only when the body names the configured model, before the answer is judged", async () => {
+  const seen: unknown[] = [];
+  const onUsage = (u: unknown) => seen.push(u);
+  const run = async (step: Parameters<typeof testProvider>[0], driverOver: Record<string, unknown> = {}) => {
+    seen.length = 0;
+    const { driver } = testProvider(step);
+    await createProviderAdapter(external(), { ...driver, ...driverOver }).complete(REQUEST, { onUsage }).catch(() => undefined);
+    return [...seen];
+  };
+  // The configured model: vouched, whether the answer is then accepted or refused.
+  assert.deepEqual(await run({ reply: { kind: "text", text: "hi" }, model: "fixture-model-1", inputTokens: 12, outputTokens: 3 }), [{ inputTokens: 12, outputTokens: 3 }]);
+  assert.deepEqual(await run({ reply: { kind: "poem" }, model: "fixture-model-1", inputTokens: 250, outputTokens: 32 }), [{ inputTokens: 250, outputTokens: 32 }]);
+  // Another model, no model, malformed counts, an error status: nothing vouched.
+  assert.deepEqual(await run({ reply: { kind: "text", text: "hi" }, model: "some-other-model", inputTokens: 999, outputTokens: 999 }), []);
+  assert.deepEqual(await run({ reply: { kind: "text", text: "hi" }, inputTokens: 999, outputTokens: 999 }), []);
+  assert.deepEqual(await run({ reply: { kind: "text", text: "hi" }, model: "fixture-model-1", inputTokens: -1, outputTokens: 1.5 }), []);
+  assert.deepEqual(await run({ status: 500, body: JSON.stringify({ model: "fixture-model-1", inputTokens: 9 }) }), []);
+  // A driver without readUsage, or one whose readUsage throws or answers for another model, vouches for nothing.
+  assert.deepEqual(await run({ reply: { kind: "poem" }, model: "fixture-model-1", inputTokens: 1 }, { readUsage: undefined }), []);
+  assert.deepEqual(await run({ reply: { kind: "poem" }, model: "fixture-model-1", inputTokens: 1 }, { readUsage: () => { throw new Error(`boom ${KEY}`); } }), []);
+  assert.deepEqual(await run({ reply: { kind: "poem" }, model: "fixture-model-1", inputTokens: 1 }, { readUsage: () => ({ model: "evil", inputTokens: 5 }) }), []);
+});
+
+test("accounting never changes the outcome: a throwing usage callback leaves the answer, and the refusal, exactly as they were", async () => {
+  const boom = () => { throw new Error("sink down"); };
+  const ok = testProvider({ reply: { kind: "text", text: "hi" }, model: "fixture-model-1", inputTokens: 1 });
+  assert.deepEqual(await createProviderAdapter(external(), ok.driver).complete(REQUEST, { onUsage: boom }), { kind: "text", text: "hi", meta: { recipient: RECIPIENT, model: "fixture-model-1", inputTokens: 1 } });
+  const wrong = testProvider({ reply: { kind: "text", text: "hi" }, model: "some-other-model", inputTokens: 1 });
+  assert.equal((await providerError(() => createProviderAdapter(external(), wrong.driver).complete(REQUEST, { onUsage: boom }))).code, "invalid_response");
+});
+
+test("under the guard, a refused answer from the configured model reports its usage, and one from another model reports none", async () => {
+  const infos: Array<[string, number | null, number | null]> = [];
+  const onCall = (i: { outcome: string; inputTokens: number | null; outputTokens: number | null }) => infos.push([i.outcome, i.inputTokens, i.outputTokens]);
+  const refused = testProvider({ reply: { kind: "poem" }, model: "fixture-model-1", inputTokens: 250, outputTokens: 32 });
+  await assert.rejects(withModelGuard(createProviderAdapter(external(), refused.driver), { onCall }).complete(REQUEST));
+  const other = testProvider({ reply: { kind: "text", text: "hi" }, model: "some-other-model", inputTokens: 999, outputTokens: 999 });
+  await providerError(() => withModelGuard(createProviderAdapter(external(), other.driver), { onCall }).complete(REQUEST));
+  assert.deepEqual(infos, [["invalid_response", 250, 32], ["invalid_response", null, null]]);
 });
 
 test("provider.ts imports only the model contract and the configuration, and makes no network call of its own", () => {

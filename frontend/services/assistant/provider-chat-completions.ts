@@ -4,9 +4,11 @@
 // (SECURITY.md, "Open decisions"). No SDK or package is used; the transport is the platform `fetch`, injectable so that no test needs a
 // key or a network.
 //
-//   ModelRequest + configured model id and output-token cap -> encode -> { model, messages, tools?, max_tokens }
+//   ModelRequest + configured model id and output-token cap -> encode -> { model, messages, tools?, <token field> }
 //                                                                          (nothing else: no user, no metadata, no key)
-//   The cap's wire field ("max_tokens") is chosen HERE and nowhere else, so a provider that wants another field changes only this file.
+//   The cap's wire field is chosen HERE and nowhere else: "max_completion_tokens" (OpenAI's current field; the older "max_tokens" is
+//   deprecated there and refused by its reasoning models) or "max_tokens" (what many compatible servers and gateways still require).
+//   The driver is built with exactly one of them (the registry picks it from MODEL_WIRE_FORMAT); a request carries that one, never both.
 //   transport: POST to the configured endpoint, no redirects, the guard's deadline and abort signal, a bounded response body
 //   2xx body -> decode -> exactly one assistant choice, finished normally -> text, or tool calls with parsed arguments; the model the
 //   provider names (required; the adapter refuses any but the configured one) and its token counts
@@ -16,11 +18,14 @@
 // finish; a tool call that is not a function call or whose name or argument text is not text; text that is not text. The model guard then
 // checks the result again against the model contract (tool names, call count, sizes) and the approved recipient.
 //
+// Usage (readChatCompletionUsage) is read separately and judges nothing: the model the body names and its `usage` counts, so that an
+// answer refused above may still be counted (the adapter trusts it only for the configured model).
+//
 // It imports only the model contract at runtime. It never sees a user id, a session, a database handle or an authorization: the
 // ProviderDriver interface gives it the ModelRequest, the configured target, the configured key (for the header only) and the wire.
 import { parseToolArguments } from "./model";
 import type { ModelMessage, ModelRequest, ModelToolCall, ToolArguments } from "./model";
-import type { ProviderDecoded, ProviderDriver, ProviderWireRequest, ProviderWireResponse } from "./provider";
+import type { ProviderDecoded, ProviderDriver, ProviderUsage, ProviderWireRequest, ProviderWireResponse } from "./provider";
 import type { Secret } from "./config";
 
 /** The largest response body read from the provider. Anything longer is not read to the end, and the call fails. */
@@ -63,15 +68,20 @@ function wireMessage(m: ModelMessage): Json {
   }
 }
 
-export function encodeChatCompletion(request: ModelRequest, target: { modelId: string; maxOutputTokens: number }): string {
+/** The request field that carries the output-token cap. Only this file names them. */
+export const CHAT_COMPLETIONS_TOKEN_FIELDS = ["max_completion_tokens", "max_tokens"] as const;
+export type ChatCompletionsTokenField = (typeof CHAT_COMPLETIONS_TOKEN_FIELDS)[number];
+
+export function encodeChatCompletion(request: ModelRequest, target: { modelId: string; maxOutputTokens: number }, tokenField: ChatCompletionsTokenField = "max_tokens"): string {
   // Never send a request without a usable cap: the adapter turns this into a ModelRequestError and sends nothing.
   if (!Number.isSafeInteger(target.maxOutputTokens) || target.maxOutputTokens < 1) throw new Error("The output-token cap is not a positive whole number.");
+  if (!(CHAT_COMPLETIONS_TOKEN_FIELDS as readonly string[]).includes(tokenField)) throw new Error("The output-token field is not a known one.");
   const tools = request.tools ?? [];
   return JSON.stringify({
     model: target.modelId,
     messages: request.messages.map(wireMessage),
     ...(tools.length === 0 ? {} : { tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })) }),
-    max_tokens: target.maxOutputTokens,
+    [tokenField]: target.maxOutputTokens,
   });
 }
 
@@ -115,10 +125,32 @@ export function decodeChatCompletion(body: string): ProviderDecoded {
     response = { kind: "text", text: message.content };
   }
 
+  return { response, model: parsed.model, ...usageOf(parsed) };
+}
+
+/** The usage counts a completion states (`usage.prompt_tokens`, `usage.completion_tokens`), each kept only if a whole number >= 0. */
+function usageOf(parsed: Json): { inputTokens?: number; outputTokens?: number } {
   const usage = isObject(parsed.usage) ? parsed.usage : {};
   const inputTokens = count(usage.prompt_tokens);
   const outputTokens = count(usage.completion_tokens);
-  return { response, model: parsed.model, ...(inputTokens === undefined ? {} : { inputTokens }), ...(outputTokens === undefined ? {} : { outputTokens }) };
+  return { ...(inputTokens === undefined ? {} : { inputTokens }), ...(outputTokens === undefined ? {} : { outputTokens }) };
+}
+
+/**
+ * The model and usage a 2xx body states, read WITHOUT judging the answer: a completion cut off ("length"), filtered, refused or
+ * otherwise undecodable may still have been billed. Undefined unless the body is a JSON object naming a model and stating at least one
+ * valid count. The adapter trusts it only when the model is the configured one.
+ */
+export function readChatCompletionUsage(body: string): ProviderUsage | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return undefined;
+  }
+  if (!isObject(parsed) || typeof parsed.model !== "string" || parsed.model === "") return undefined;
+  const counts = usageOf(parsed);
+  return counts.inputTokens === undefined && counts.outputTokens === undefined ? undefined : { model: parsed.model, ...counts };
 }
 
 // ---------------------------------------------------------------------
@@ -127,11 +159,17 @@ export function decodeChatCompletion(body: string): ProviderDecoded {
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
+/**
+ * The provider answered, but with more than MAX_PROVIDER_RESPONSE_BYTES. The adapter reads only this NAME (as it does TimeoutError) and
+ * reports invalid_response: an answer that cannot be used, not a service that is unavailable, so a client is not told to retry it.
+ */
+const tooLarge = () => Object.assign(new Error("The response is too large."), { name: "ResponseTooLarge" });
+
 async function readCapped(response: Response, max: number): Promise<string> {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > max) {
     await response.body?.cancel().catch(() => undefined);
-    throw new Error("The response is too large.");
+    throw tooLarge();
   }
   if (response.body === null) return "";
   const reader = response.body.getReader();
@@ -143,7 +181,7 @@ async function readCapped(response: Response, max: number): Promise<string> {
     size += value.byteLength;
     if (size > max) {
       await reader.cancel().catch(() => undefined);
-      throw new Error("The response is too large.");
+      throw tooLarge();
     }
     chunks.push(value);
   }
@@ -177,12 +215,19 @@ export async function sendChatCompletion(request: ProviderWireRequest, fetchImpl
   return { status: response.status, body: await readCapped(response, MAX_PROVIDER_RESPONSE_BYTES) };
 }
 
-/** The Chat Completions driver. `fetch` defaults to the platform's; tests pass a fake so that nothing leaves the process. */
-export function chatCompletionsDriver(options: { fetch?: FetchLike } = {}): ProviderDriver {
+/**
+ * The Chat Completions driver. `fetch` defaults to the platform's; tests pass a fake so that nothing leaves the process. `tokenField` is
+ * the request field for the output-token cap; production code gets the driver from the registry (provider-registry.ts), which always
+ * names it from MODEL_WIRE_FORMAT. The default ("max_tokens") exists for tests that build the driver directly.
+ */
+export function chatCompletionsDriver(options: { fetch?: FetchLike; tokenField?: ChatCompletionsTokenField } = {}): ProviderDriver {
   const fetchImpl: FetchLike = options.fetch ?? ((url, init) => fetch(url, init));
+  const tokenField = options.tokenField ?? "max_tokens";
+  if (!(CHAT_COMPLETIONS_TOKEN_FIELDS as readonly string[]).includes(tokenField)) throw new Error("The output-token field is not a known one.");
   return Object.freeze({
-    encode: (request: ModelRequest, target: { modelId: string; maxOutputTokens: number }) => encodeChatCompletion(request, { modelId: target.modelId, maxOutputTokens: target.maxOutputTokens }),
+    encode: (request: ModelRequest, target: { modelId: string; maxOutputTokens: number }) => encodeChatCompletion(request, { modelId: target.modelId, maxOutputTokens: target.maxOutputTokens }, tokenField),
     decode: decodeChatCompletion,
+    readUsage: readChatCompletionUsage,
     authHeaders: (apiKey: Secret) => ({ authorization: `Bearer ${apiKey.reveal()}` }),
     transport: (request: ProviderWireRequest) => sendChatCompletion(request, fetchImpl),
   });

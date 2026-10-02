@@ -17,6 +17,7 @@
 //
 // Every failure is a typed ModelProviderError with a fixed message (model.ts) and nothing from the provider in it:
 //   the transport times out         -> timeout      (a TimeoutError, e.g. from AbortSignal.timeout; only the error's name is read)
+//   the transport's ResponseTooLarge -> invalid_response (the provider answered with more than the driver reads; not retryable)
 //   the transport throws otherwise  -> unavailable
 //   401 or 403                      -> authentication_failed
 //   408 or 504                      -> timeout
@@ -24,6 +25,9 @@
 //   any other 4xx                   -> refused
 //   5xx, or any other non-2xx       -> unavailable
 //   a 2xx body that cannot be decoded, or that names a model other than the configured one -> invalid_response
+// Token usage of a 2xx body is read (driver.readUsage) and reported to the guard (options.onUsage) BEFORE the answer is judged, so a
+// refused answer the provider billed is still counted; only when the body names the configured model, and only counts that pass the
+// usual whole-number check. Nothing is estimated: no body, no usage.
 // The model guard (withModelGuard) still enforces the timeout, run budget, abort signal, output limit and approved recipient on top.
 import { META_ID, ModelProviderError, ModelRequestError, MAX_MODEL_TIMEOUT_MS } from "./model";
 import type { ModelAdapter, ModelCallOptions, ModelRequest } from "./model";
@@ -43,6 +47,9 @@ export type ProviderWireResponse = Readonly<{ status: number; body: string }>;
 /** What a provider's decoded answer carries: the response itself (validated by the model guard), and optional metadata. */
 export type ProviderDecoded = { response: unknown; model?: string; inputTokens?: number; outputTokens?: number };
 
+/** The model and token usage a 2xx body states, read without judging the answer. Counts only: no content. */
+export type ProviderUsage = { model: string; inputTokens?: number; outputTokens?: number };
+
 /**
  * The provider-specific parts, supplied by server code (a future registry keyed by configuration; tests use a recording fake). It
  * never decides the endpoint, the model, the key or the recipient: those come from the configuration.
@@ -52,6 +59,12 @@ export type ProviderDriver = Readonly<{
   encode(request: ModelRequest, target: { modelId: string; maxOutputTokens: number; maxOutputChars?: number }): string;
   /** The provider's wire format for an answer. Throwing means the body could not be used. */
   decode(body: string): ProviderDecoded;
+  /**
+   * Optional: the model and usage a 2xx body states, in the provider's own usage shape, WITHOUT judging the answer (an answer that is cut
+   * off, filtered or otherwise refused may still have been billed). Undefined when the body does not state them in that shape. A driver
+   * without it reports no usage for a refused answer.
+   */
+  readUsage?(body: string): ProviderUsage | undefined;
   /** The provider's authentication headers for the configured key. */
   authHeaders(apiKey: Secret): Readonly<Record<string, string>>;
   /** Sends one request. The only place a network call can happen. */
@@ -118,12 +131,35 @@ export function createProviderAdapter(config: AssistantConfig, driver: ProviderD
         });
       } catch (error) {
         // Whatever the transport threw (it may quote the request or the key) is dropped here, never passed on. Only its NAME is read:
-        // the platform's own timeout (AbortSignal.timeout) is a TimeoutError, reported as the timeout it is.
-        throw new ModelProviderError(isObject(error) && error.name === "TimeoutError" ? "timeout" : "unavailable");
+        // the platform's own timeout (AbortSignal.timeout) is a TimeoutError, reported as the timeout it is; a driver's ResponseTooLarge
+        // means the provider DID answer, with more than the driver will read, so it is an unusable answer (not retryable), not an outage.
+        const name = isObject(error) ? error.name : undefined;
+        throw new ModelProviderError(name === "TimeoutError" ? "timeout" : name === "ResponseTooLarge" ? "invalid_response" : "unavailable");
       }
       if (!isObject(wire) || typeof wire.status !== "number") throw new ModelProviderError("unavailable");
       if (wire.status < 200 || wire.status > 299) throw statusError(wire.status);
       if (typeof wire.body !== "string") throw new ModelProviderError("invalid_response");
+
+      // Usage first, before the answer is judged, so that an answer refused below (or by the guard) is still counted. Only usage stated by
+      // the CONFIGURED model is vouched for: another model's, or a body naming none, is not this recipient's bill. Counts only, through the
+      // guard's callback: nothing of the body reaches an error.
+      if (options?.onUsage !== undefined && driver.readUsage !== undefined) {
+        let usage: unknown;
+        try {
+          usage = driver.readUsage(wire.body);
+        } catch {
+          usage = undefined;
+        }
+        const inputTokens = isObject(usage) && usage.model === modelId ? count(usage.inputTokens) : undefined;
+        const outputTokens = isObject(usage) && usage.model === modelId ? count(usage.outputTokens) : undefined;
+        if (inputTokens !== undefined || outputTokens !== undefined) {
+          try {
+            options.onUsage({ ...(inputTokens === undefined ? {} : { inputTokens }), ...(outputTokens === undefined ? {} : { outputTokens }) });
+          } catch {
+            // Accounting must never change the outcome of a call.
+          }
+        }
+      }
 
       let decoded: ProviderDecoded;
       try {

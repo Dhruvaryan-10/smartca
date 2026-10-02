@@ -40,7 +40,12 @@ test("each layer has exactly one caller above it: nothing can skip the service, 
   assert.deepEqual(users(/\bfindAssistantAuthorization\b/, "services/assistant/authorization-store.ts"), ["services/assistant/consent-service.ts", "services/assistant/service.ts"]);
   assert.deepEqual(users(/\bcreatePostgresRunLimiter\b/, "services/assistant/run-store.ts"), ["services/assistant/service.ts"]);
   assert.deepEqual(users(/\bpurgeExpiredAssistantRuns\b/, "services/assistant/run-retention.ts"), ["scripts/assistant-purge-runs.ts"]);
-  assert.deepEqual(users(/\bchatCompletionsDriver\b/, "services/assistant/provider-chat-completions.ts"), ["services/assistant/http.ts"]);
+  assert.deepEqual(users(/\bchatCompletionsDriver\b/, "services/assistant/provider-chat-completions.ts"), ["services/assistant/provider-registry.ts"]);
+  // The registry (MODEL_WIRE_FORMAT -> driver) is used by the service, and by the operator preflight, which only builds a driver and
+  // never calls it.
+  assert.deepEqual(users(/\bproviderDriverFor\b/, "services/assistant/provider-registry.ts"), ["services/assistant/preflight.ts", "services/assistant/service.ts"]);
+  // The preflight is reached only from its operator script, never from a route or the request path.
+  assert.deepEqual(users(/\brunAssistantPreflight\b/, "services/assistant/preflight.ts"), ["scripts/assistant-preflight.ts"]);
   // Below the external entry point: the run, the tools and the egress filter are reached only through the orchestrator. askAssistant
   // without `visibleClasses` sends tool results unfiltered, so its only callers are the external path (which always passes the plan's
   // classes) and the synthetic path (fixture tools, no real data); a new caller must be a deliberate, reviewed change.
@@ -63,7 +68,7 @@ test("the external path always applies the access plan's egress classes and tool
 test("the lower layers import nothing above them", () => {
   const upper = /(^|\/)(http|service|external|authorization-store|run-store|run-retention|session|access-plan|authorization)$|@\/db|\.\.\/db|\/db\/|next-auth|^next(\/|$)|^@\/app|\/app\//;
   // The model and provider layer: no authorization, plan, consent, limits, audit, service, session, database, framework or route.
-  for (const lower of ["services/assistant/model.ts", "services/assistant/provider.ts", "services/assistant/provider-chat-completions.ts"]) {
+  for (const lower of ["services/assistant/model.ts", "services/assistant/provider.ts", "services/assistant/provider-chat-completions.ts", "services/assistant/provider-registry.ts"]) {
     const offending = imports(lower).filter((specifier) => upper.test(specifier));
     assert.deepEqual(offending, [], `${lower} imports ${offending.join(", ")}`);
   }
@@ -89,7 +94,7 @@ test("the HTTP boundary takes the user from the session reader only, and no requ
   // The service is given the session user and the body; the dependencies come from `deps` (server code) or the server defaults.
   assert.match(http, /handleAssistantRequest\(userId === null \? null : \{ userId \}, body, \{/);
   assert.doesNotMatch(http, /body\.(config|driver|limiter|userId|profile|recipient|model|provider)|searchParams|headers\.get\("(x-user|authorization)/i);
-  assert.deepEqual([...new Set(imports("services/assistant/http.ts"))].sort(), ["./api-contract", "./ask", "./config", "./events", "./model", "./provider", "./provider-chat-completions", "./service", "@/lib/assistant/run-limits"].sort());
+  assert.deepEqual([...new Set(imports("services/assistant/http.ts"))].sort(), ["./api-contract", "./ask", "./config", "./events", "./model", "./provider", "./service", "@/lib/assistant/run-limits"].sort());
 });
 
 test("the consent API: route -> consent-http -> consent-service -> consent terms (access plan) and the authorization store, nothing skipped", () => {

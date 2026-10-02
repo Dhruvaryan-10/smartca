@@ -68,6 +68,8 @@ const PURE_TESTS = [
   "tests/assistant-external-config.test.ts",
   "tests/assistant-run-limiter-contract.test.ts",
   "tests/assistant-consent.test.ts",
+  "tests/assistant-provider-registry.test.ts",
+  "tests/assistant-preflight.test.ts",
 ];
 const PURE_HELPERS = ["tests/helpers-answer.ts", "tests/helpers-errors.ts", "tests/helpers-orchestrator.ts", "tests/helpers-provider.ts", "tests/helpers-limiter.ts"];
 

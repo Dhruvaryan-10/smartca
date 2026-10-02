@@ -9,6 +9,7 @@
 //           -> handleAssistantRequest(session, body, deps): body shape { messages } only, configuration, consent from the database,
 //              access plan, limits, run, audit (service.ts; nothing here repeats or skips a step of it)
 //           -> the public response (api-contract.ts) as JSON, with an HTTP status from its category, never cached
+//   The request's own signal is passed on: a client that disconnects cancels the run (request_cancelled), with no further provider call.
 //
 // What a client can choose: only the text of its messages. The user, profile, tools, data classes, recipient, provider, model, endpoint
 // and limits come from the session, the code and the server's configuration; a body naming any of them is refused by the service. The
@@ -19,7 +20,6 @@ import { readAssistantConfig } from "./config";
 import type { AssistantConfig } from "./config";
 import { MAX_MESSAGE_CHARS } from "./model";
 import type { ProviderDriver } from "./provider";
-import { chatCompletionsDriver } from "./provider-chat-completions";
 import { handleAssistantRequest } from "./service";
 import type { AssistantApiErrorCategory, AssistantApiResponse } from "./api-contract";
 import type { AssistantEventSink } from "./events";
@@ -36,7 +36,7 @@ export type AssistantHttpDeps = {
   getSessionUserId: () => Promise<string | null>;
   /** Defaults to reading the server's environment on each request (readAssistantConfig), which fails closed. */
   config?: AssistantConfig | (() => AssistantConfig);
-  /** Defaults to the Chat Completions driver (provider-chat-completions.ts). */
+  /** Defaults to the registry's driver for the configuration's MODEL_WIRE_FORMAT (provider-registry.ts), chosen by the service. */
   driver?: ProviderDriver;
   now?: () => number;
   onEvent?: AssistantEventSink;
@@ -131,7 +131,10 @@ export async function handleAssistantHttp(request: Request, deps: AssistantHttpD
 
   const response = await handleAssistantRequest(userId === null ? null : { userId }, body, {
     config: deps.config ?? (() => readAssistantConfig()),
-    driver: deps.driver ?? chatCompletionsDriver(),
+    ...(deps.driver === undefined ? {} : { driver: deps.driver }),
+    // The client's connection: when it goes away (Next.js aborts request.signal when the response closes unfinished), the run stops at its
+    // next model call, and an in-flight provider request is aborted, so nobody pays for an answer nobody will read.
+    signal: request.signal,
     ...(deps.now === undefined ? {} : { now: deps.now }),
     ...(deps.onEvent === undefined ? {} : { onEvent: deps.onEvent }),
     ...(deps.limiter === undefined ? {} : { limiter: deps.limiter }),

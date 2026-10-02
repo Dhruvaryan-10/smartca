@@ -29,7 +29,7 @@ const GOOD: Record<string, string> = {
   ASSISTANT_MAX_CONCURRENT_RUNS: "1",
   ASSISTANT_MAX_TOKENS_PER_WINDOW: "200000",
   ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100",
-  MODEL_MAX_OUTPUT_TOKENS: "1024", ASSISTANT_RUN_RETENTION_DAYS: "400",
+  MODEL_MAX_OUTPUT_TOKENS: "1024", MODEL_WIRE_FORMAT: "openai-chat-completions", ASSISTANT_RUN_RETENTION_DAYS: "400",
 };
 const rejection = (env: Record<string, string | undefined>): AssistantConfigError => {
   try {
@@ -70,7 +70,7 @@ test("every limit (per user and global) is required, and each out-of-bounds valu
 });
 
 test("MODEL_MAX_OUTPUT_TOKENS is required, plain digits from 1 to its ceiling, and refused by name only, never by value", () => {
-  assert.deepEqual([...ASSISTANT_PROVIDER_ENV_NAMES], ["MODEL_MAX_OUTPUT_TOKENS"]);
+  assert.deepEqual([...ASSISTANT_PROVIDER_ENV_NAMES], ["MODEL_MAX_OUTPUT_TOKENS", "MODEL_WIRE_FORMAT"]);
   for (const missing of [undefined, "", "   "]) {
     const error = rejection({ ...GOOD, MODEL_MAX_OUTPUT_TOKENS: missing });
     assert.deepEqual([error.code, error.variables], ["missing_configuration", ["MODEL_MAX_OUTPUT_TOKENS"]], JSON.stringify(missing));
@@ -117,7 +117,10 @@ test("only config.ts and tests refer to validateExternalEnv: no server code can 
     }
   };
   for (const dir of ["app", "services", "lib", "db", "scripts", "tax-engine"]) if (fs.existsSync(path.join(FRONTEND, dir))) walk(path.join(FRONTEND, dir));
-  assert.deepEqual(offenders, ["services/assistant/config.ts"]);
+  // The operator preflight (preflight.ts, reached only from scripts/assistant-preflight.ts, pinned in the layering test) VALIDATES an
+  // external environment and reports on it; it never returns the configuration to anything that runs, so it cannot reach external mode.
+  assert.deepEqual(offenders, ["services/assistant/config.ts", "services/assistant/preflight.ts"]);
+  assert.doesNotMatch(fs.readFileSync(path.join(FRONTEND, "services/assistant/preflight.ts"), "utf8"), /askExternal|createProviderAdapter|handleAssistantRequest|\.complete\(|transport\(/);
 });
 
 test("every limit accepts values up to its ceiling, whatever their number of digits", () => {

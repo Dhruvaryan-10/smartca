@@ -12,6 +12,8 @@
 //
 // An EXTERNAL configuration (validateExternalEnv) additionally requires, and validates against hard ceilings:
 //   MODEL_MAX_OUTPUT_TOKENS=         the most output tokens the provider may generate per model call, at most MAX_MODEL_OUTPUT_TOKENS
+//   MODEL_WIRE_FORMAT=               which wire format the configured endpoint speaks, one of MODEL_WIRE_FORMATS (a NAME only: what each
+//                                    format sends is decided by the driver registry, services/assistant/provider-registry.ts)
 //   ASSISTANT_RATE_WINDOW_SECONDS=   the window the per-user limits are counted over
 //   ASSISTANT_MAX_RUNS_PER_WINDOW=   assistant runs one person may start in that window
 //   ASSISTANT_MAX_CONCURRENT_RUNS=   runs one person may have in progress at once
@@ -40,8 +42,17 @@ export const ASSISTANT_ENV_NAMES = [
   "MODEL_TIMEOUT_MS",
   "MODEL_MAX_OUTPUT_CHARS",
 ] as const;
-/** Required only for an external configuration: the provider's per-call generation bound (services/assistant/provider.ts). */
-export const ASSISTANT_PROVIDER_ENV_NAMES = ["MODEL_MAX_OUTPUT_TOKENS"] as const;
+/** Required only for an external configuration: the provider's per-call generation bound (services/assistant/provider.ts) and its wire format. */
+export const ASSISTANT_PROVIDER_ENV_NAMES = ["MODEL_MAX_OUTPUT_TOKENS", "MODEL_WIRE_FORMAT"] as const;
+/**
+ * The wire formats an external endpoint may speak, by name. Both are the OpenAI-compatible Chat Completions format (docs/decisions/0004);
+ * they differ only in the request field that carries MODEL_MAX_OUTPUT_TOKENS, which the driver alone names: OpenAI's current field
+ * for "openai-chat-completions", and the older field many compatible servers and gateways still require for
+ * "openai-chat-completions-max-tokens". No default: an external configuration must say which one its endpoint speaks.
+ */
+export const MODEL_WIRE_FORMATS = ["openai-chat-completions", "openai-chat-completions-max-tokens"] as const;
+export type ModelWireFormat = (typeof MODEL_WIRE_FORMATS)[number];
+export const isModelWireFormat = (value: unknown): value is ModelWireFormat => typeof value === "string" && (MODEL_WIRE_FORMATS as readonly string[]).includes(value);
 /** Required only for an external configuration: the per-user limits (services/assistant/run-store.ts). */
 export const ASSISTANT_LIMIT_ENV_NAMES = [
   "ASSISTANT_RATE_WINDOW_SECONDS",
@@ -126,7 +137,7 @@ type ModelSettings = {
   maxOutputChars: number;
 };
 export type SyntheticAssistantConfig = ModelSettings & { env: "synthetic" };
-export type ExternalAssistantConfig = ModelSettings & { env: "external"; maxOutputTokens: number; limits: AssistantRunLimits; runRetentionDays: number };
+export type ExternalAssistantConfig = ModelSettings & { env: "external"; maxOutputTokens: number; wireFormat: ModelWireFormat; limits: AssistantRunLimits; runRetentionDays: number };
 export type AssistantConfig = { enabled: false } | SyntheticAssistantConfig | ExternalAssistantConfig;
 
 const KEY_SHAPE = /^[\x21-\x7e]{1,512}$/;
@@ -234,7 +245,7 @@ export function readRunRetentionDays(env: Readonly<Record<string, string | undef
 
 /**
  * Validates an EXTERNAL configuration: enabled, ASSISTANT_ENV=external, every model variable, exactly one approved recipient (fallback
- * recipients are undecided), the provider's output-token cap, every limit (per user and global) and the run retention. Fails closed, naming variables and never values. NOT used by
+ * recipients are undecided), the provider's output-token cap and wire format, every limit (per user and global) and the run retention. Fails closed, naming variables and never values. NOT used by
  * readAssistantConfig, which still refuses external mode: nothing but tests reaches this until that is deliberately changed.
  */
 export function validateExternalEnv(env: Readonly<Record<string, string | undefined>>): ExternalAssistantConfig {
@@ -253,8 +264,10 @@ export function validateExternalEnv(env: Readonly<Record<string, string | undefi
     maxGlobalConcurrentRuns: limitValue(value("ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS") as string, RUN_LIMIT_CEILINGS.maxGlobalConcurrentRuns),
   };
   const maxOutputTokens = limitValue(value("MODEL_MAX_OUTPUT_TOKENS") as string, MAX_MODEL_OUTPUT_TOKENS);
+  const wireFormat = value("MODEL_WIRE_FORMAT");
   const invalid: AssistantEnvName[] = [];
   if (maxOutputTokens === null) invalid.push("MODEL_MAX_OUTPUT_TOKENS");
+  if (!isModelWireFormat(wireFormat)) invalid.push("MODEL_WIRE_FORMAT");
   if (limits.windowSeconds === null) invalid.push("ASSISTANT_RATE_WINDOW_SECONDS");
   if (limits.maxRunsPerWindow === null) invalid.push("ASSISTANT_MAX_RUNS_PER_WINDOW");
   if (limits.maxConcurrentRuns === null) invalid.push("ASSISTANT_MAX_CONCURRENT_RUNS");
@@ -275,6 +288,7 @@ export function validateExternalEnv(env: Readonly<Record<string, string | undefi
     ...settings,
     env: "external" as const,
     maxOutputTokens: maxOutputTokens as number,
+    wireFormat: wireFormat as ModelWireFormat,
     limits: Object.freeze(limits as { [K in keyof AssistantRunLimits]: number }),
     runRetentionDays: runRetentionDays as number,
   });

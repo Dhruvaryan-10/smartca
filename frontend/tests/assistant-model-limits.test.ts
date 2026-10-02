@@ -252,6 +252,88 @@ test("onCall receives metadata only, for successes and for typed failures: recip
   assert.equal(JSON.stringify(infos).includes("SECRET"), false, "no prompt and no answer text in the metadata");
 });
 
+// --- usage an adapter vouches for, on a refused answer ------------------------------------------------------------------------------
+
+/** An adapter that vouches for `usage` through onUsage (when given), then answers with `reply` (or never answers, or answers late). */
+function vouching(usage: unknown, reply: unknown, timing: "now" | "never" | { lateMs: number } = "now"): ModelAdapter {
+  return {
+    complete: async (_request, options?: ModelCallOptions) => {
+      if (timing === "now") {
+        options?.onUsage?.(usage as never);
+        return reply as never;
+      }
+      if (timing === "never") return new Promise(() => undefined);
+      await new Promise((resolve) => setTimeout(resolve, timing.lateMs));
+      options?.onUsage?.(usage as never);
+      return reply as never;
+    },
+  };
+}
+async function reportOf(adapter: ModelAdapter, policy: Record<string, unknown> = {}) {
+  const infos: ModelCallInfo[] = [];
+  let outcome = "ok";
+  try {
+    await withModelGuard(adapter, { ...policy, onCall: (i: ModelCallInfo) => infos.push(i) }).complete(request());
+  } catch (error) {
+    outcome = (error as { code?: string }).code ?? (error as Error).name;
+  }
+  return { infos, outcome, tokens: infos.length === 1 ? [infos[0].inputTokens, infos[0].outputTokens] : null };
+}
+
+test("a refused answer keeps the usage its adapter vouched for, in the call's one report", async () => {
+  for (const [label, reply, policy, code] of [
+    ["not a response", { kind: "poem" }, {}, "ModelResponseError"],
+    ["too long", okText("x".repeat(60)), { maxOutputChars: 50 }, "output_too_large"],
+  ] as const) {
+    const r = await reportOf(vouching({ inputTokens: 250, outputTokens: 32 }, reply), policy);
+    assert.deepEqual([r.outcome, r.infos.length, r.tokens], [code, 1, [250, 32]], label);
+  }
+  // An accepted answer's own counts are used, once, whatever was vouched.
+  const ok = await reportOf(vouching({ inputTokens: 1, outputTokens: 1 }, okText()));
+  assert.deepEqual([ok.outcome, ok.infos.length, ok.tokens], ["ok", 1, [12, 3]]);
+  // A refused recipient keeps the answer's validated counts (as before), not a second copy.
+  const unlisted = await reportOf(vouching({ inputTokens: 1, outputTokens: 1 }, okText("fine", { ...META, recipient: "other-place" })), { approvedRecipients: ["synthetic-local"] });
+  assert.deepEqual([unlisted.outcome, unlisted.tokens], ["recipient_not_approved", [12, 3]]);
+});
+
+test("vouched usage must be whole, non-negative counts within the contract's bound; anything else is no count", async () => {
+  for (const usage of [undefined, null, "250", [250], { inputTokens: -1 }, { inputTokens: 1.5, outputTokens: "3" }, { inputTokens: 1_000_000_001 }, { tokens: 5 }]) {
+    const r = await reportOf(vouching(usage, { kind: "poem" }));
+    assert.deepEqual([r.infos.length, r.tokens], [1, [null, null]], JSON.stringify(usage));
+  }
+  const partial = await reportOf(vouching({ inputTokens: 9, outputTokens: -1 }, { kind: "poem" }));
+  assert.deepEqual(partial.tokens, [9, null]);
+});
+
+test("no usage is invented for a call that timed out, and usage vouched after the call settled is ignored", async () => {
+  const hung = await reportOf(vouching({ inputTokens: 5, outputTokens: 5 }, okText(), "never"), { timeoutMs: 20 });
+  assert.deepEqual([hung.outcome, hung.infos.length, hung.tokens], ["timeout", 1, [null, null]]);
+  const infos: ModelCallInfo[] = [];
+  const late = vouching({ inputTokens: 7, outputTokens: 7 }, okText(), { lateMs: 60 });
+  await rejectsProvider(() => withModelGuard(late, { timeoutMs: 20, onCall: (i: ModelCallInfo) => infos.push(i) }).complete(request()), "timeout", "late");
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.deepEqual([infos.length, infos[0].inputTokens, infos[0].outputTokens], [1, null, null], "the late report changed nothing and added no report");
+});
+
+test("each call of a run reports its own usage once, so a run's total is the sum of its calls with nothing counted twice", async () => {
+  const infos: ModelCallInfo[] = [];
+  const guarded = withModelGuard(
+    {
+      complete: async (_r, options?: ModelCallOptions) => {
+        options?.onUsage?.({ inputTokens: 100 + infos.length, outputTokens: 10 });
+        options?.onUsage?.({ inputTokens: 100 + infos.length, outputTokens: 10 }); // vouched twice in one call: still one report
+        return infos.length === 2 ? ({ kind: "poem" } as never) : (okText("fine", { ...META, inputTokens: 100 + infos.length, outputTokens: 10 }) as never);
+      },
+    },
+    { onCall: (i) => infos.push(i) },
+  );
+  await guarded.complete(request());
+  await guarded.complete(request());
+  await assert.rejects(guarded.complete(request()), ModelResponseError);
+  assert.deepEqual(infos.map((i) => [i.outcome, i.inputTokens, i.outputTokens]), [["ok", 100, 10], ["ok", 101, 10], ["invalid_response", 102, 10]]);
+  assert.equal(infos.reduce((sum, i) => sum + (i.inputTokens ?? 0) + (i.outputTokens ?? 0), 0), 333);
+});
+
 // --- policy sanity ------------------------------------------------------------------------------------------------------------------
 
 test("an invalid policy is refused when the guard is built, naming the field and never a value", () => {
