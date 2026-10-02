@@ -13,11 +13,15 @@
 /* primary actions, current navigation, selection and focus only.      */
 /* success/warning/danger/info each mean exactly one thing.            */
 /*                                                                     */
-/* Four surfaces, used sparingly:                                      */
-/*   background        the page (paper)                                */
+/* A layered material system (never a flat white or black page):      */
+/*   surface-chrome    the app's frame (sidebar): the deepest layer    */
+/*   background        the page canvas                                 */
 /*   surface           a grouped region that earns its own sheet       */
 /*   surface-elevated  floating layers only (menus, popovers, dialogs) */
-/*   surface-sunken    controls and recessed wells (inputs, hover)     */
+/*   surface-sunken    controls and recessed wells (inputs)            */
+/*   surface-hover     pointer feedback on rows and items              */
+/*   surface-selected  the current navigation item (a quiet teal tint) */
+/* Adjacent layers are kept visibly distinct; a test enforces it.      */
 /*                                                                     */
 /* Manual override via <html data-theme="light|dark">, falling back to */
 /* the OS preference when no override is set.                          */
@@ -27,28 +31,31 @@
 :root {
   color-scheme: light;
 
-  --background: #f2f4f1;
-  --surface: #fafbf9;
+  --background: #eceee9;
+  --surface: #f8f9f6;
   --surface-elevated: #ffffff;
-  --surface-sunken: #e7eae6;
+  --surface-sunken: #e0e5de;
+  --surface-selected: #cbe0dc;
+  --surface-hover: #d8ded6;
+  --surface-chrome: #e3e7e0;
   --foreground: #17201c;
-  --foreground-secondary: #3e4843;
-  --foreground-muted: #58615c;
-  --border: #d9ded9;
-  --divider: #e2e6e2;
-  --border-strong: #bfc6c0;
-  --field-border: #7f8781;
+  --foreground-secondary: #3c4641;
+  --foreground-muted: #535c57;
+  --border: #d1d7d0;
+  --divider: #dde2dc;
+  --border-strong: #b6bfb7;
+  --field-border: #717973;
   --primary: #0b5d68;
   --primary-hover: #084a53;
   --primary-foreground: #f4faf9;
   --success: #24663c;
-  --warning: #875a00;
+  --warning: #7f5600;
   --danger: #b3261e;
   --danger-foreground: #ffffff;
   --info: #2a5b9a;
   --income: #1e6b45;
-  --expense: #ad3e28;
-  --tax: #835f00;
+  --expense: #a33a25;
+  --tax: #7a5800;
   --chart-4: #4c5e7c;
   --chart-5: #7a5a2e;
   --chart-6: #5e6b3a;
@@ -63,17 +70,20 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --background: #0e1211;
-  --surface: #151a18;
-  --surface-elevated: #1c2220;
-  --surface-sunken: #222927;
-  --foreground: #e7ece9;
-  --foreground-secondary: #c2cac5;
-  --foreground-muted: #97a19b;
-  --border: #2a312e;
-  --divider: #212826;
-  --border-strong: #3a423f;
-  --field-border: #737c77;
+  --background: #141b19;
+  --surface: #1a2320;
+  --surface-elevated: #222c29;
+  --surface-sunken: #252f2c;
+  --surface-selected: #1e3a38;
+  --surface-hover: #1b2321;
+  --surface-chrome: #0f1513;
+  --foreground: #e6ece9;
+  --foreground-secondary: #c3ccc7;
+  --foreground-muted: #9ca6a0;
+  --border: #2f3a37;
+  --divider: #242e2b;
+  --border-strong: #3e4946;
+  --field-border: #79837e;
   --primary: #6cc2ba;
   --primary-hover: #8ad0c9;
   --primary-foreground: #05201e;
@@ -99,17 +109,20 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
 
-    --background: #0e1211;
-    --surface: #151a18;
-    --surface-elevated: #1c2220;
-    --surface-sunken: #222927;
-    --foreground: #e7ece9;
-    --foreground-secondary: #c2cac5;
-    --foreground-muted: #97a19b;
-    --border: #2a312e;
-    --divider: #212826;
-    --border-strong: #3a423f;
-    --field-border: #737c77;
+    --background: #141b19;
+    --surface: #1a2320;
+    --surface-elevated: #222c29;
+    --surface-sunken: #252f2c;
+    --surface-selected: #1e3a38;
+    --surface-hover: #1b2321;
+    --surface-chrome: #0f1513;
+    --foreground: #e6ece9;
+    --foreground-secondary: #c3ccc7;
+    --foreground-muted: #9ca6a0;
+    --border: #2f3a37;
+    --divider: #242e2b;
+    --border-strong: #3e4946;
+    --field-border: #79837e;
     --primary: #6cc2ba;
     --primary-hover: #8ad0c9;
     --primary-foreground: #05201e;
@@ -267,6 +280,9 @@
   --color-surface: var(--surface);
   --color-surface-elevated: var(--surface-elevated);
   --color-surface-sunken: var(--surface-sunken);
+  --color-surface-chrome: var(--surface-chrome);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-selected: var(--surface-selected);
   --color-foreground: var(--foreground);
   --color-foreground-secondary: var(--foreground-secondary);
   --color-foreground-muted: var(--foreground-muted);

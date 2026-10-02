@@ -41,7 +41,15 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-const SURFACES = ["--background", "--surface", "--surface-elevated", "--surface-sunken"];
+const SURFACES = [
+  "--background",
+  "--surface",
+  "--surface-elevated",
+  "--surface-sunken",
+  "--surface-chrome",
+  "--surface-hover",
+  "--surface-selected",
+];
 const TEXT = [
   "--foreground", "--foreground-secondary", "--foreground-muted", "--primary",
   "--success", "--warning", "--danger", "--info", "--income", "--expense", "--tax",
@@ -74,6 +82,36 @@ for (const [name, theme] of [["light", light], ["dark", dark]] as const) {
       const ratio = contrast(theme.get(series)!, theme.get("--surface")!);
       assert.ok(ratio >= 3, `${series} on surface is ${ratio.toFixed(2)}:1`);
     }
+  });
+}
+
+for (const [name, theme] of [["light", light], ["dark", dark]] as const) {
+  // The material system is layered, not a flat white or black page: the frame (chrome), the canvas (background), sheets
+  // (surface) and floating layers (elevated) must each be visibly distinct from the next, in the right order of depth.
+  test(`${name}: adjacent surface layers are visibly distinct`, () => {
+    const order = ["--surface-chrome", "--background", "--surface", "--surface-elevated"];
+    for (let i = 0; i < order.length - 1; i++) {
+      const ratio = contrast(theme.get(order[i])!, theme.get(order[i + 1])!);
+      assert.ok(ratio >= 1.04, `${order[i]} → ${order[i + 1]} is only ${ratio.toFixed(3)}:1 apart`);
+    }
+    const lighter = (a: string, b: string) => luminance(theme.get(a)!) > luminance(theme.get(b)!);
+    assert.ok(lighter("--surface", "--background"), "sheets sit above the canvas");
+    assert.ok(lighter("--surface-elevated", "--surface"), "floating layers sit above sheets");
+    if (name === "dark") assert.ok(lighter("--background", "--surface-chrome"), "in dark, the frame is the deepest layer");
+  });
+
+  test(`${name}: neither theme is a bare white or black page`, () => {
+    assert.notEqual(theme.get("--background")!.toLowerCase(), "#ffffff");
+    assert.notEqual(theme.get("--background")!.toLowerCase(), "#000000");
+    const l = luminance(theme.get("--background")!);
+    assert.ok(name === "light" ? l < 0.9 : l > 0.004, `${name} background luminance ${l.toFixed(4)}`);
+  });
+
+  test(`${name}: selected and hover fills are distinct from the frame they sit on`, () => {
+    const ratio = contrast(theme.get("--surface-selected")!, theme.get("--surface-chrome")!);
+    assert.ok(ratio >= 1.05, `selected vs chrome ${ratio.toFixed(3)}:1`);
+    const hover = contrast(theme.get("--surface-hover")!, theme.get("--surface-chrome")!);
+    assert.ok(hover >= 1.05, `hover vs chrome ${hover.toFixed(3)}:1`);
   });
 }
 

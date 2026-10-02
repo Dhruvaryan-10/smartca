@@ -6,8 +6,8 @@ import { PRIMARY_NAV, activeNavIndex } from "./navigation";
 import { IconClose } from "./ui/Icons";
 import { Wordmark } from "./ui/Wordmark";
 
-// Quiet by design: same surface as the page, no fill on inactive items.
-// "You are here" is a single sunken fill that slides between items when
+// Quiet by design: the app's frame layer (chrome), no fill on inactive
+// items. "You are here" is a single teal-tinted fill that slides between items when
 // the destination changes (instant under reduced motion), plus the
 // accent on the current item's icon and aria-current.
 //
@@ -28,7 +28,7 @@ export default function Sidebar({
 
   return (
     <div
-      className={`flex h-full flex-col bg-background px-3 pb-4 ${drawer ? "w-full pt-2" : "w-(--sidebar-width) pt-3"}`}
+      className={`flex h-full flex-col bg-surface-chrome px-3 pb-4 ${drawer ? "w-full pt-2" : "w-(--sidebar-width) pt-3"}`}
     >
       <div className="flex h-11 items-center justify-between pl-2.5">
         <Link
@@ -58,7 +58,7 @@ export default function Sidebar({
         {active >= 0 && (
           <span
             aria-hidden="true"
-            className="absolute inset-x-0 top-0 h-(--nav-item) rounded-control bg-surface-sunken transition-transform duration-(--duration-normal) ease-standard"
+            className="absolute inset-x-0 top-0 h-(--nav-item) rounded-control bg-surface-selected transition-transform duration-(--duration-normal) ease-standard"
             style={{ transform: `translateY(calc(${active} * (var(--nav-item) + var(--nav-gap))))` }}
           />
         )}
@@ -71,7 +71,7 @@ export default function Sidebar({
               onClick={() => onNavigate?.(href)}
               aria-current={current ? "page" : undefined}
               className={`relative flex h-(--nav-item) items-center gap-3 rounded-control px-2.5 text-body font-medium transition-colors duration-(--duration-fast) ease-standard focus-visible:focus-ring ${
-                current ? "text-foreground" : "text-foreground-muted hover:bg-surface-sunken/60 hover:text-foreground"
+                current ? "text-foreground" : "text-foreground-muted hover:bg-surface-hover hover:text-foreground"
               }`}
             >
               <Icon className={current ? "text-primary" : undefined} />

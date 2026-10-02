@@ -15,26 +15,37 @@ The file is organised as follows:
 
 ## Colour
 
-### Surfaces and text
+### Surfaces and text: a layered material system
+
+Neither theme is a flat page. Light is a set of soft, faintly green-grey neutrals: an off-white canvas, a slightly deeper
+frame, and sheets that lift off the canvas. Dark is a set of green-charcoal layers, not black: the frame is the deepest layer,
+the canvas sits above it, and sheets and floating layers rise in steps. Adjacent layers must stay visibly distinct, and every
+text colour must keep 4.5:1 on every layer. `tests/design-tokens.test.ts` enforces both.
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `--background` | `#F2F4F1` | `#0E1211` | The page ("paper") |
-| `--surface` | `#FAFBF9` | `#151A18` | Panels, tables and forms that earn a surface ("sheet") |
-| `--surface-elevated` | `#FFFFFF` | `#1C2220` | Floating layers only: menus, popovers, dialogs, toasts |
-| `--surface-sunken` | `#E7EAE6` | `#222927` | Inputs, hover fills, segmented-control tracks, skeletons |
-| `--foreground` | `#17201C` | `#E7ECE9` | Primary text and every figure ("ink") |
-| `--foreground-secondary` | `#3E4843` | `#C2CAC5` | Supporting text that is still content: descriptions, captions, secondary figures |
-| `--foreground-muted` | `#58615C` | `#97A19B` | Labels, metadata, axis ticks, placeholders ("pencil") |
+| `--surface-chrome` | `#E3E7E0` | `#0F1513` | The app's frame: the sidebar and mobile drawer. In dark it is the deepest layer |
+| `--background` | `#ECEEE9` | `#141B19` | The page canvas |
+| `--surface` | `#F8F9F6` | `#1A2320` | Panels, tables and forms that earn a surface ("sheet") |
+| `--surface-elevated` | `#FFFFFF` | `#222C29` | Floating layers only: menus, popovers, dialogs, the Ask SmartCA sheet, toasts |
+| `--surface-sunken` | `#E0E5DE` | `#252F2C` | Inputs, hover fills on sheets, segmented-control tracks, skeletons |
+| `--surface-hover` | `#D8DED6` | `#1B2321` | Pointer feedback on the frame (inactive navigation items) |
+| `--surface-selected` | `#CBE0DC` | `#1E3A38` | The current navigation item: a quiet teal tint, never a solid fill |
+| `--foreground` | `#17201C` | `#E6ECE9` | Primary text and every figure ("ink") |
+| `--foreground-secondary` | `#3C4641` | `#C3CCC7` | Supporting text that is still content: descriptions, captions, secondary figures |
+| `--foreground-muted` | `#535C57` | `#9CA6A0` | Labels, metadata, axis ticks, placeholders ("pencil") |
+
+The financial colours keep their meaning on every layer (income green, expense coral, tax gold, assistant teal). Light-mode
+warning, expense and tax were deepened slightly (`#7F5600`, `#A33A25`, `#7A5800`) so they keep 4.5:1 on the deeper layers.
 
 ### Lines
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `--border` | `#D9DED9` | `#2A312E` | **Standard border:** panel edges, table frames, menus |
-| `--divider` | `#E2E6E2` | `#212826` | **Subtle divider:** between rows and list items where alignment already groups the content. Decorative, so it needs no contrast ratio |
-| `--border-strong` | `#BFC6C0` | `#3A423F` | Table header rule, hover edge on interactive rows |
-| `--field-border` | `#7F8781` | `#737C77` | Edges of interactive controls (≥3:1, WCAG 1.4.11) |
+| `--border` | `#D1D7D0` | `#2F3A37` | **Standard border:** panel edges, table frames, menus |
+| `--divider` | `#DDE2DC` | `#242E2B` | **Subtle divider:** between rows and list items where alignment already groups the content. Decorative, so it needs no contrast ratio |
+| `--border-strong` | `#B6BFB7` | `#3E4946` | Table header rule, hover edge on interactive rows |
+| `--field-border` | `#717973` | `#79837E` | Edges of interactive controls (≥3:1, WCAG 1.4.11) |
 | `--border-focus` | = ring | = ring | **Focus border:** the 2px focus outline |
 | `--border-active` | = primary | = primary | **Active border:** current tab underline, selected segmented item, the active field in a stepped flow |
 
@@ -99,13 +110,13 @@ These values are computed and enforced by the test.
 
 | Pair | Light | Dark |
 |---|---|---|
-| foreground on background / sunken | 15.07 / 13.74 | 15.78 / 12.42 |
-| secondary on background / sunken | 8.58 / 7.82 | 11.27 / 8.87 |
-| muted on background / sunken | 5.79 / 5.28 | 7.08 / 5.58 |
-| primary on background / sunken | 6.83 / 6.23 | 9.04 / 7.11 |
-| success / warning / danger / info on sunken (the worst surface) | 5.69 / 4.96 / 5.39 / 5.65 | 7.00 / 7.35 / 6.12 / 6.89 |
+| foreground on background / sunken | 14.27 / 13.04 | 14.61 / 11.53 |
+| secondary on background / sunken | 8.38 / 7.66 | 10.65 / 8.40 |
+| muted on background / sunken / selected | 5.92 / 5.41 / 5.02 | 6.98 / 5.50 / 4.88 |
+| primary on background / sunken | 6.47 / 5.91 | 8.38 / 6.61 |
+| success / warning / danger / info on sunken | 5.40 / 5.08 / 5.11 / 5.37 | 6.51 / 6.83 / 5.69 / 6.40 |
 | primary-foreground on primary | 7.15 | 8.17 |
-| field-border on background / surface / sunken | 3.34 / 3.56 / 3.04 | 4.38 / 4.09 / 3.45 |
+| field-border on background / surface / sunken | 3.84 / 4.24 / 3.51 | 4.47 / 4.11 / 3.52 |
 
 Every text colour reaches 4.5:1 on every surface in both themes.
 
