@@ -99,7 +99,12 @@ Scrolling is reading. Content does not move unless the person moves it.
   - The stage shows a SmartCA Summary composition, built from real tokens and with figures computed by the real ledger summary and tax engine. It begins tilted in 3D with its pieces scattered in depth.
   - Driven by the section's view timeline, it settles flat while the pieces dock into place: net savings, the money-flow bar, monthly bars, recent entries, the tax result and the Ask SmartCA launcher.
   - Four steps beside it light up in order. They are always readable; only their emphasis changes.
-- **Chapters.** The product visuals drift by ±28px with scroll. The connectors in "From income to insight" draw as they enter.
+- **Chapters.** The product visuals drift by ±28px with scroll (≥1024px). The connectors in "From income to insight" draw as they enter.
+- **Chapter reveals (every width).** After the hero, each chapter is revealed as it is reached: label, then headline, then copy, then the product visual, then the checklist.
+  - Each element runs on its own view timeline (`.chapter-in`, `.chapter-visual`) and completes within a few hundred pixels of entering. A `--s` offset sets the order.
+  - Text rises 18px from transparent. Visuals rise 36px with a 0.975 scale. Nothing else moves.
+  - Phones get the same simple reveal, with no sticky stage and no 3D.
+  - Without scroll-driven animation support, or with reduced motion, no reveal rules apply and every element is visible from the start. Nothing outside the guarded rules sets opacity below 1.
 - **Header.** It gains its edge and shadow over the first 96px of scroll.
 - **Conditions.** All of this runs only at ≥1024px, without reduced motion, and in browsers with scroll-driven animations. Otherwise the composition is fully assembled and static, with nothing sticky and nothing hidden.
 - **Overflow.** Horizontal overflow is clipped with `overflow-x: clip`, which keeps sticky positioning working.

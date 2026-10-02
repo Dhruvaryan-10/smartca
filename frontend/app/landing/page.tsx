@@ -86,15 +86,15 @@ export default async function LandingPage() {
 
         <section aria-labelledby="final-title" className="border-t border-divider py-24 sm:py-36">
           <div className="mx-auto max-w-[84rem] px-gutter text-center">
-            <h2 id="final-title" className="mx-auto max-w-4xl font-display text-[clamp(2.75rem,1.4rem+5.2vw,5.5rem)] font-semibold leading-[1.02] tracking-[-0.04em] text-foreground">
+            <h2 id="final-title" className="chapter-in mx-auto max-w-4xl font-display text-[clamp(2.75rem,1.4rem+5.2vw,5.5rem)] font-semibold leading-[1.02] tracking-[-0.04em] text-foreground">
               Know every figure.
               <br />
               <span className="text-foreground-muted">See every step.</span>
             </h2>
-            <p className="mx-auto mt-6 max-w-lg text-body-lg text-foreground-secondary">
+            <p className="chapter-in mx-auto mt-6 max-w-lg text-body-lg text-foreground-secondary" style={{ ["--s" as string]: "40px" }}>
               Record what comes in and what goes out. SmartCA does the arithmetic, works out your tax, and shows its working.
             </p>
-            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <div className="chapter-in mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row" style={{ ["--s" as string]: "80px" }}>
               <Link href={signedIn ? "/dashboard" : "/signup"} className={buttonClasses("primary", "lg", "w-full sm:w-auto")}>
                 {signedIn ? "Open SmartCA" : "Get started"}
               </Link>

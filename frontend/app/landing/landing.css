@@ -154,6 +154,52 @@
   }
 }
 
+/* Chapter reveals (every width). After the hero, each chapter is revealed as it is reached: its label first, then the headline,
+   the copy, the product visual and finally the checklist. Each element runs on its own view timeline and completes within a few
+   hundred pixels of entering, so nothing waits on a long scroll; `--s` offsets an element's start to set the order. Only opacity
+   and a short rise (plus a very slight scale for visuals) move. Without scroll-driven animation support, or with reduced motion,
+   none of this applies and every element is simply visible. */
+@keyframes chapter-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes chapter-visual-in {
+  from {
+    opacity: 0;
+    transform: translateY(36px) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .chapter-in {
+      animation: chapter-in var(--ease-entrance) both;
+      animation-timeline: view();
+      animation-range: entry var(--s, 0px) entry calc(var(--s, 0px) + 200px);
+    }
+    .chapter-visual {
+      animation: chapter-visual-in var(--ease-entrance) both;
+      animation-timeline: view();
+      animation-range: entry calc(var(--s, 0px) + 60px) entry calc(var(--s, 0px) + 340px);
+    }
+  }
+  @media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+    /* Side by side, a visual's top sits above its text; a later start keeps it settling just after the words. */
+    .chapter-visual {
+      animation-range: entry calc(var(--s, 0px) + 160px) entry calc(var(--s, 0px) + 460px);
+    }
+  }
+}
+
 /* Interactive cues on the page's own links: a calm underline that grows from the left. */
 .landing-link {
   background-image: linear-gradient(currentColor, currentColor);

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { formatRupees } from "@/lib/format";
 import type { ComputationNode } from "@/tax-engine";
 import { SpendingBreakdown } from "../components/charts/SpendingBreakdown";
@@ -13,6 +13,9 @@ import { EXAMPLE_COMPARISON, EXAMPLE_NEW_REGIME, EXAMPLE_SUMMARY, EXAMPLE_TAX_IN
 // The product story. Each chapter is an editorial spread: a short argument on one side and the real SmartCA interface on the
 // other — the same components the app renders, fed example data computed by the same code. Visuals drift gently with scroll
 // on desktop (landing.css); they are never hidden, and are static under reduced motion.
+
+/** Start offset for a chapter reveal (landing.css `.chapter-in` / `.chapter-visual`). */
+const at = (px: number) => ({ "--s": `${px}px` }) as CSSProperties;
 
 function Chapter({
   id,
@@ -35,14 +38,16 @@ function Chapter({
     <section id={id} aria-labelledby={`${id}-title`} className="scroll-mt-20 py-20 sm:py-28">
       <div className="mx-auto grid max-w-[84rem] items-center gap-12 px-gutter lg:grid-cols-12 lg:gap-16">
         <div className={`lg:col-span-5 ${flip ? "lg:order-2" : ""}`}>
-          <p className="text-label font-medium text-primary">{kicker}</p>
-          <h2 id={`${id}-title`} className="mt-3 font-display text-[clamp(2rem,1.4rem+2.2vw,3rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-foreground">
+          <p className="chapter-in text-label font-medium text-primary">{kicker}</p>
+          <h2 id={`${id}-title`} className="chapter-in mt-3 font-display text-[clamp(2rem,1.4rem+2.2vw,3rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-foreground" style={at(30)}>
             {title}
           </h2>
-          <div className="mt-5 max-w-md text-body-lg text-foreground-secondary">{children}</div>
+          <div className="chapter-in mt-5 max-w-md text-body-lg text-foreground-secondary" style={at(60)}>
+            {children}
+          </div>
           <ul className="mt-8 max-w-md divide-y divide-divider border-y border-divider">
-            {points.map((point) => (
-              <li key={point} className="flex items-start gap-3 py-3 text-body text-foreground">
+            {points.map((point, i) => (
+              <li key={point} className="chapter-in flex items-start gap-3 py-3 text-body text-foreground" style={at(90 + i * 30)}>
                 <IconCheck width={16} height={16} className="mt-0.5 shrink-0 text-primary" />
                 {point}
               </li>
@@ -50,7 +55,9 @@ function Chapter({
           </ul>
         </div>
         <div className={`lg:col-span-7 ${flip ? "lg:order-1" : ""}`}>
-          <div className="landing-drift">{visual}</div>
+          <div className="chapter-visual">
+            <div className="landing-drift">{visual}</div>
+          </div>
         </div>
       </div>
     </section>
@@ -246,11 +253,11 @@ export function FlowSection() {
     <section id="flow" aria-labelledby="flow-title" className="scroll-mt-20 border-y border-divider bg-surface py-20 sm:py-28">
       <div className="mx-auto max-w-[84rem] px-gutter">
         <div className="max-w-2xl">
-          <p className="text-label font-medium text-primary">The whole picture</p>
-          <h2 id="flow-title" className="mt-3 font-display text-[clamp(2rem,1.4rem+2.2vw,3rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-foreground">
+          <p className="chapter-in text-label font-medium text-primary">The whole picture</p>
+          <h2 id="flow-title" className="chapter-in mt-3 font-display text-[clamp(2rem,1.4rem+2.2vw,3rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-foreground" style={at(30)}>
             From income to insight.
           </h2>
-          <p className="mt-5 text-body-lg text-foreground-secondary">
+          <p className="chapter-in mt-5 text-body-lg text-foreground-secondary" style={at(60)}>
             What came in, where it went, what stayed, and what that means — in one continuous reading, the way SmartCA lays out your
             own figures.
           </p>
@@ -261,7 +268,7 @@ export function FlowSection() {
             Example: {formatRupees(s.incomePaise)} of income; {formatRupees(s.expensePaise)} spent, mostly on {top?.category}; {formatRupees(s.savingsPaise)} kept.
           </figcaption>
 
-          <div className="flex flex-col justify-center rounded-panel border border-border bg-background p-6">
+          <div className="chapter-visual flex flex-col justify-center rounded-panel border border-border bg-background p-6" style={at(-60)}>
             <p className="text-label text-foreground-muted">Came in</p>
             <Money paise={s.incomePaise} kind="income" className="mt-1 block text-figure font-semibold" />
             <div className="mt-4 h-2 rounded-pill bg-income" />
@@ -270,7 +277,7 @@ export function FlowSection() {
 
           <Connector />
 
-          <div className="rounded-panel border border-border bg-background p-6">
+          <div className="chapter-visual rounded-panel border border-border bg-background p-6" style={at(0)}>
             <p className="text-label text-foreground-muted">Went out, and stayed</p>
             <ul className="mt-3 space-y-2.5">
               {cats.map((c, i) => (
@@ -297,7 +304,7 @@ export function FlowSection() {
 
           <Connector />
 
-          <div className="flex flex-col justify-center rounded-panel border border-primary/30 bg-assistant-soft p-6">
+          <div className="chapter-visual flex flex-col justify-center rounded-panel border border-primary/30 bg-assistant-soft p-6" style={at(60)}>
             <p className="text-label font-medium text-assistant">What it means</p>
             <p className="mt-2 text-heading font-semibold text-foreground">You kept {s.savingsRatePercent}% of what you earned.</p>
             <p className="mt-2 text-body text-foreground-secondary">
@@ -334,14 +341,14 @@ export function AskSection() {
     <section id="ask" aria-labelledby="ask-title" className="scroll-mt-20 py-20 sm:py-28">
       <div className="mx-auto grid max-w-[84rem] items-center gap-12 px-gutter lg:grid-cols-12 lg:gap-16">
         <div className="lg:col-span-5">
-          <span className="flex h-11 w-11 items-center justify-center rounded-pill bg-assistant text-assistant-foreground">
+          <span className="chapter-in flex h-11 w-11 items-center justify-center rounded-pill bg-assistant text-assistant-foreground">
             <IconAsk />
           </span>
-          <p className="mt-6 text-label font-medium text-assistant">Ask SmartCA</p>
-          <h2 id="ask-title" className="mt-3 font-display text-[clamp(2rem,1.4rem+2.2vw,3rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-foreground">
+          <p className="chapter-in mt-6 text-label font-medium text-assistant" style={at(20)}>Ask SmartCA</p>
+          <h2 id="ask-title" className="chapter-in mt-3 font-display text-[clamp(2rem,1.4rem+2.2vw,3rem)] font-semibold leading-[1.08] tracking-[-0.03em] text-foreground" style={at(40)}>
             Answers that show their working.
           </h2>
-          <p className="mt-5 max-w-md text-body-lg text-foreground-secondary">
+          <p className="chapter-in mt-5 max-w-md text-body-lg text-foreground-secondary" style={at(70)}>
             Ask about your ledger, your tax under either regime, or Indian income-tax rules. Ask SmartCA answers with SmartCA’s own
             tools — the tax engine, your ledger and official tax sources — and marks where each figure came from.
           </p>
@@ -350,65 +357,67 @@ export function AskSection() {
               "Asks your permission first, and shows exactly what would be shared",
               "Withdraw that permission at any time",
               "Explanations are labelled, never presented as the figures themselves",
-            ].map((point) => (
-              <li key={point} className="flex items-start gap-3 py-3 text-body text-foreground">
+            ].map((point, i) => (
+              <li key={point} className="chapter-in flex items-start gap-3 py-3 text-body text-foreground" style={at(100 + i * 30)}>
                 <IconCheck width={16} height={16} className="mt-0.5 shrink-0 text-assistant" />
                 {point}
               </li>
             ))}
           </ul>
-          <p className="mt-4 max-w-md text-label text-foreground-muted">
+          <p className="chapter-in mt-4 max-w-md text-label text-foreground-muted" style={at(190)}>
             Available when your SmartCA deployment switches on an assistant model. Until then, SmartCA says so plainly.
           </p>
         </div>
 
         <div className="lg:col-span-7">
-          <div className="landing-drift relative pb-10 sm:pb-12">
-            <figure className="ml-auto max-w-xl overflow-hidden rounded-dialog border border-border bg-surface-elevated shadow-modal">
-              <figcaption className="sr-only">An example Ask SmartCA answer comparing the two tax regimes, with its sources.</figcaption>
-              <div aria-hidden="true">
-                <div className="flex items-center justify-between border-b border-divider px-5 py-3">
-                  <div className="flex items-center gap-2.5">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-pill bg-assistant-soft text-assistant">
-                      <IconAsk width={15} height={15} />
-                    </span>
-                    <span className="text-body font-semibold text-foreground">Ask SmartCA</span>
-                  </div>
-                  <IconClose width={16} height={16} className="text-foreground-muted" />
-                </div>
-                <div className="space-y-4 px-5 py-5">
-                  <div>
-                    <p className="text-micro font-medium text-foreground-muted">You asked</p>
-                    <p className="mt-1 text-body font-medium text-foreground">Which regime works out lower for me this year?</p>
-                  </div>
-                  <div className="space-y-3 border-l-2 border-assistant pl-3.5">
-                    <div>
-                      <p className="text-micro font-medium text-foreground-muted">Explanation</p>
-                      <p className="mt-1 text-body text-foreground">
-                        With your figures, total tax is {formatRupees(newTax)} under the new regime and {formatRupees(oldTax)} under the
-                        old one, so the new regime is {formatRupees(diff)} lower. The old regime allows your Section 80C deduction, but
-                        its slab rates are higher.
-                      </p>
+          <div className="chapter-visual">
+            <div className="landing-drift relative pb-10 sm:pb-12">
+              <figure className="ml-auto max-w-xl overflow-hidden rounded-dialog border border-border bg-surface-elevated shadow-modal">
+                <figcaption className="sr-only">An example Ask SmartCA answer comparing the two tax regimes, with its sources.</figcaption>
+                <div aria-hidden="true">
+                  <div className="flex items-center justify-between border-b border-divider px-5 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-7 w-7 items-center justify-center rounded-pill bg-assistant-soft text-assistant">
+                        <IconAsk width={15} height={15} />
+                      </span>
+                      <span className="text-body font-semibold text-foreground">Ask SmartCA</span>
                     </div>
-                    <div className="border-l-2 border-tax pl-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone="tax">Tax engine</Badge>
-                        <span className="text-label text-foreground">Regime comparison from the SmartCA tax engine</span>
+                    <IconClose width={16} height={16} className="text-foreground-muted" />
+                  </div>
+                  <div className="space-y-4 px-5 py-5">
+                    <div>
+                      <p className="text-micro font-medium text-foreground-muted">You asked</p>
+                      <p className="mt-1 text-body font-medium text-foreground">Which regime works out lower for me this year?</p>
+                    </div>
+                    <div className="space-y-3 border-l-2 border-assistant pl-3.5">
+                      <div>
+                        <p className="text-micro font-medium text-foreground-muted">Explanation</p>
+                        <p className="mt-1 text-body text-foreground">
+                          With your figures, total tax is {formatRupees(newTax)} under the new regime and {formatRupees(oldTax)} under the
+                          old one, so the new regime is {formatRupees(diff)} lower. The old regime allows your Section 80C deduction, but
+                          its slab rates are higher.
+                        </p>
                       </div>
-                      <p className="mt-1 font-mono text-micro text-foreground-muted">AY 2026-27</p>
-                    </div>
-                    <div>
-                      <p className="text-micro font-medium text-foreground-muted">Sources</p>
-                      <p className="mt-1 text-label text-primary">1. Official guidance · AY 2026-27</p>
+                      <div className="border-l-2 border-tax pl-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone="tax">Tax engine</Badge>
+                          <span className="text-label text-foreground">Regime comparison from the SmartCA tax engine</span>
+                        </div>
+                        <p className="mt-1 font-mono text-micro text-foreground-muted">AY 2026-27</p>
+                      </div>
+                      <div>
+                        <p className="text-micro font-medium text-foreground-muted">Sources</p>
+                        <p className="mt-1 text-label text-primary">1. Official guidance · AY 2026-27</p>
+                      </div>
                     </div>
                   </div>
+                  <div className="border-t border-divider px-5 py-3 text-micro text-foreground-muted">Example answer. Explanations are written by a language model.</div>
                 </div>
-                <div className="border-t border-divider px-5 py-3 text-micro text-foreground-muted">Example answer. Explanations are written by a language model.</div>
-              </div>
-            </figure>
-            <span aria-hidden="true" className="absolute bottom-0 right-2 flex h-14 w-14 items-center justify-center rounded-pill bg-assistant text-assistant-foreground shadow-floating ring-4 ring-assistant-halo sm:right-6">
-              <IconAsk width={22} height={22} />
-            </span>
+              </figure>
+              <span aria-hidden="true" className="absolute bottom-0 right-2 flex h-14 w-14 items-center justify-center rounded-pill bg-assistant text-assistant-foreground shadow-floating ring-4 ring-assistant-halo sm:right-6">
+                <IconAsk width={22} height={22} />
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -425,12 +434,12 @@ export function Principles() {
   return (
     <section aria-labelledby="principles-title" className="border-t border-divider py-20 sm:py-24">
       <div className="mx-auto max-w-[84rem] px-gutter">
-        <h2 id="principles-title" className="max-w-xl font-display text-[clamp(1.75rem,1.3rem+1.6vw,2.25rem)] font-semibold leading-tight tracking-[-0.025em] text-foreground">
+        <h2 id="principles-title" className="chapter-in max-w-xl font-display text-[clamp(1.75rem,1.3rem+1.6vw,2.25rem)] font-semibold leading-tight tracking-[-0.025em] text-foreground">
           Honest by construction.
         </h2>
         <div className="mt-10 grid gap-10 md:grid-cols-3 md:gap-12">
-          {items.map((item) => (
-            <div key={item.title} className="rule-subtotal pt-5">
+          {items.map((item, i) => (
+            <div key={item.title} className="chapter-in rule-subtotal pt-5" style={at(40 + i * 60)}>
               <h3 className="text-heading font-semibold text-foreground">{item.title}</h3>
               <p className="mt-2 text-body text-foreground-secondary">{item.body}</p>
             </div>
