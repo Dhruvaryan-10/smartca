@@ -749,6 +749,15 @@ html:has([data-app-shell]) {
   }
 }
 
+/* A composition donut settles in once on first render. */
+@keyframes donut-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+.donut-enter {
+  animation: donut-in var(--duration-reveal) var(--ease-entrance) backwards;
+}
+
 /* Recalculated figure: a faint accent wash that fades, so the eye finds
    what changed. The figure itself never animates. */
 @keyframes recompute-wash {
@@ -778,6 +787,7 @@ html:has([data-app-shell]) {
   .menu-enter,
   .wipe-in,
   .wipe-in-slow,
+  .donut-enter,
   .assistant-fab,
   .app-dialog[open],
   .app-dialog[open]::backdrop,

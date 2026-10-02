@@ -5,12 +5,13 @@ import Link from "next/link";
 import { PageHeader, Section } from "../../components/ui/PageHeader";
 import { buttonClasses } from "../../components/ui/Button";
 import { ErrorState, Skeleton } from "../../components/ui/States";
-import { formatDate } from "@/lib/format";
-import { summarize, type Summary, type SummaryTransaction } from "@/lib/summary";
+import { formatDate, formatRupees } from "@/lib/format";
+import { summarize, type CategoryShare, type Summary, type SummaryTransaction } from "@/lib/summary";
+import { incomeCategories } from "@/lib/summary-view";
 import { GetStarted } from "./GetStarted";
 import MonthlyChart, { MonthHighlight } from "./MonthlyChart";
 import { RecentActivity } from "./RecentActivity";
-import { SpendingBreakdown } from "../../components/charts/SpendingBreakdown";
+import { CompositionBreakdown } from "../../components/charts/SpendingBreakdown";
 import { SummaryHero } from "./SummaryHero";
 
 // Shape returned by GET /api/transactions (services/transactions.ts).
@@ -54,6 +55,8 @@ export default function Dashboard() {
     () => (state.status === "ready" ? summarize(state.transactions) : null),
     [state],
   );
+  // Income by the categories people gave their entries (display only; same filter as summarize()).
+  const income = useMemo(() => (state.status === "ready" ? incomeCategories(state.transactions) : []), [state]);
 
   return (
     <>
@@ -71,7 +74,7 @@ export default function Dashboard() {
 
       {summary && summary.transactionCount === 0 && <GetStarted />}
 
-      {summary && summary.transactionCount > 0 && <SummaryBody summary={summary} />}
+      {summary && summary.transactionCount > 0 && <SummaryBody summary={summary} income={income} />}
     </>
   );
 }
@@ -85,10 +88,12 @@ function describeRange(summary: Summary): string {
 }
 
 // The answer first (net savings and what it is made of), then the
-// working: the month-by-month record, where spending went, and the
-// latest entries. Sections below the hero settle in as they scroll into
-// view (globals.css `.reveal`; static under reduced motion).
-function SummaryBody({ summary }: { summary: Summary }) {
+// working: the month-by-month record, where spending went and where income
+// came from, and the latest entries. Charts support the figures, never
+// replace them: every chart has its exact numbers written beside it. Sections
+// below the hero settle in as they scroll into view (globals.css `.reveal`;
+// static under reduced motion).
+function SummaryBody({ summary, income }: { summary: Summary; income: CategoryShare[] }) {
   return (
     <div className="space-y-section">
       <SummaryHero summary={summary} />
@@ -103,24 +108,56 @@ function SummaryBody({ summary }: { summary: Summary }) {
           {summary.months.length >= 2 ? (
             <MonthlyChart months={summary.months} />
           ) : (
-            <p className="text-label text-foreground-muted">
-              A month-by-month comparison appears once you have activity in two or more months.
-            </p>
+            <div className="flex flex-col gap-3 rounded-panel border border-dashed border-border px-5 py-6 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-body text-foreground-secondary">
+                Add activity in another month to compare income and expenses month by month.
+              </p>
+              <Link href="/income" className={buttonClasses("secondary", "sm", "shrink-0 self-start sm:self-auto")}>
+                Open ledger
+              </Link>
+            </div>
           )}
         </div>
       </Section>
 
+      <Section
+        title="Where your money goes"
+        aside={summary.categories.length > 0 ? `${summary.categories.length} ${summary.categories.length === 1 ? "category" : "categories"}` : undefined}
+        className="reveal"
+      >
+        {summary.categories.length > 0 ? (
+          <div className="max-w-4xl">
+            <CompositionBreakdown categories={summary.categories} totalPaise={summary.expensePaise} tone="expense" totalLabel="spent" chart="donut" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-body text-foreground-secondary">
+              No spending recorded yet. Expenses you add are grouped by category here, largest first.
+            </p>
+            <Link href="/expenses" className={buttonClasses("secondary", "sm")}>
+              Add an expense
+            </Link>
+          </div>
+        )}
+      </Section>
+
       <div className="grid grid-cols-1 gap-x-16 gap-y-section lg:grid-cols-2">
-        <Section title="Where your money goes" className="reveal">
-          {summary.categories.length > 0 ? (
-            <SpendingBreakdown categories={summary.categories} totalPaise={summary.expensePaise} />
+        <Section title="Where your money comes from" className="reveal">
+          {income.length >= 2 ? (
+            <CompositionBreakdown categories={income} totalPaise={summary.incomePaise} tone="income" totalLabel="received" chart="donut" />
+          ) : income.length === 1 ? (
+            <div className="space-y-2">
+              <p className="text-body text-foreground-secondary">
+                All of your recorded income — <span className="font-numeric font-medium text-income">{formatRupees(summary.incomePaise)}</span> — is{" "}
+                <span className="font-medium text-foreground">{income[0].category}</span>.
+              </p>
+              <p className="text-label text-foreground-muted">A breakdown appears when income comes from more than one category.</p>
+            </div>
           ) : (
             <div className="space-y-4">
-              <p className="text-body text-foreground-secondary">
-                No spending recorded yet. Expenses you add are grouped by category here, largest first.
-              </p>
-              <Link href="/expenses" className={buttonClasses("secondary", "sm")}>
-                Add an expense
+              <p className="text-body text-foreground-secondary">No income recorded yet. Income you add is grouped by category here.</p>
+              <Link href="/income" className={buttonClasses("secondary", "sm")}>
+                Add income
               </Link>
             </div>
           )}
