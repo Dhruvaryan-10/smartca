@@ -1,248 +1,122 @@
-"use client";
-
-import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import type { Metadata } from "next";
 import Link from "next/link";
-import FinanceAIModel from "../components/FinanceAIModel";
+import { auth } from "@/auth";
+import { buttonClasses } from "../components/ui/Button";
+import { Wordmark } from "../components/ui/Wordmark";
+import { Hero } from "./Hero";
+import { AskSection, FlowSection, LedgerChapter, Principles, SummaryChapter, TaxChapter, VaultChapter } from "./Story";
+import "./landing.css";
 
-export default function Landing() {
+export const metadata: Metadata = {
+  title: "SmartCA — Your money, worked out",
+  description:
+    "A calm ledger for your income, spending and tax. SmartCA does the arithmetic, compares both tax regimes for AY 2026-27, shows every step, and never uses a figure you haven’t confirmed.",
+};
 
-  const [showNav, setShowNav] = useState(false);
+const NAV = [
+  { href: "#summary", label: "Summary" },
+  { href: "#ledger", label: "Ledger" },
+  { href: "#tax", label: "Tax" },
+  { href: "#vault", label: "Vault" },
+  { href: "#ask", label: "Ask SmartCA" },
+];
 
-  useEffect(() => {
-    const handleScroll = () => setShowNav(window.scrollY > 40);
-    window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+// The public SmartCA page. A server component with no client JavaScript of its own beyond the small spending breakdown it
+// borrows from the app: the signature sequence and every other motion are scroll-linked CSS (landing.css). The session is read
+// only to offer "Open SmartCA" instead of sign-up to someone already signed in.
+export default async function LandingPage() {
+  const session = await auth();
+  const signedIn = Boolean(session?.user);
 
   return (
-    <main className="relative overflow-x-hidden text-white bg-[#020617]">
-
-      {/* ================= ANIMATED BACKGROUND ================= */}
-
-      <div className="absolute inset-0 -z-10 overflow-hidden">
-
-        <div className="blob blob1" />
-        <div className="blob blob2" />
-        <div className="blob blob3" />
-
-      </div>
-
-      {/* ================= NAVBAR ================= */}
-
-      <motion.nav
-        initial={{ y: -100 }}
-        animate={{ y: showNav ? 0 : -100 }}
-        transition={{ duration: 0.4 }}
-        className="fixed w-full z-50 backdrop-blur-xl bg-black/40 border-b border-white/10 px-10 py-5 flex justify-between items-center"
+    <div className="min-h-screen overflow-x-clip bg-background text-foreground">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-(--z-toast) focus:rounded-control focus:bg-surface-elevated focus:px-3 focus:py-2 focus:text-body focus:shadow-floating focus:outline-2 focus:outline-offset-2 focus:outline-ring"
       >
+        Skip to content
+      </a>
 
-        <h1 className="text-xl font-bold text-teal-300 tracking-wide">
-          SmartCA
-        </h1>
-
-        <div className="space-x-8 text-sm">
-
-          <Link href="#features" className="hover:text-teal-300 transition">
-            Features
+      <header className="landing-header sticky top-0 z-(--z-sticky) bg-background">
+        <div className="mx-auto flex h-16 max-w-[84rem] items-center justify-between gap-6 px-gutter">
+          <Link href="/landing" aria-label="SmartCA home" className="rounded-control focus-visible:focus-ring">
+            <Wordmark />
           </Link>
-
-          <Link href="#pricing" className="hover:text-teal-300 transition">
-            Pricing
-          </Link>
-
-          <Link href="/login" className="hover:text-teal-300 transition">
-            Login
-          </Link>
-
-          <Link
-            href="/signup"
-            className="bg-teal-400 text-black px-6 py-2 rounded-lg font-semibold hover:opacity-80 transition"
-          >
-            Get Started
-          </Link>
-
-        </div>
-
-      </motion.nav>
-
-      {/* ================= HERO ================= */}
-
-      <section className="min-h-screen flex flex-col lg:flex-row items-center justify-between max-w-7xl mx-auto px-8 pt-32">
-
-        {/* LEFT TEXT */}
-
-        <motion.div
-          initial={{ opacity: 0, x: -60 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.8 }}
-          className="max-w-xl"
-        >
-
-          <h1 className="text-5xl lg:text-6xl font-extrabold leading-tight">
-
-            AI Powered
-            <span className="block text-teal-400 mt-2">
-              Finance Intelligence
-            </span>
-
-          </h1>
-
-          <p className="mt-6 text-slate-300 text-lg leading-relaxed">
-
-            Track income, manage expenses, estimate taxes and receive
-            intelligent financial insights — all in one powerful AI dashboard.
-
-          </p>
-
-          <div className="mt-10 flex gap-6">
-
-            <Link
-              href="/signup"
-              className="px-8 py-4 rounded-xl bg-teal-400 text-black font-semibold hover:scale-105 transition shadow-lg"
-            >
-              Start Free Trial
-            </Link>
-
-            <Link
-              href="#features"
-              className="px-8 py-4 rounded-xl border border-teal-300 hover:bg-teal-300 hover:text-black transition"
-            >
-              Learn More
-            </Link>
-
+          <nav aria-label="Explore SmartCA" className="hidden lg:block">
+            <ul className="flex items-center gap-7">
+              {NAV.map((item) => (
+                <li key={item.href}>
+                  <a href={item.href} className="landing-link rounded-xs py-1 text-body text-foreground-secondary hover:text-foreground focus-visible:focus-ring">
+                    {item.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <div className="flex items-center gap-2 sm:gap-3">
+            {signedIn ? (
+              <Link href="/dashboard" className={buttonClasses("primary", "md")}>
+                Open SmartCA
+              </Link>
+            ) : (
+              <>
+                <Link href="/login" className={buttonClasses("ghost", "md", "text-foreground")}>
+                  Sign in
+                </Link>
+                <Link href="/signup" className={buttonClasses("primary", "md")}>
+                  Get started
+                </Link>
+              </>
+            )}
           </div>
-
-        </motion.div>
-
-        {/* RIGHT 3D MODEL */}
-
-        <motion.div
-          initial={{ opacity: 0, x: 60 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.8 }}
-          className="w-[420px] h-[420px] lg:w-[480px] lg:h-[480px] mt-16 lg:mt-0"
-        >
-
-          <FinanceAIModel />
-
-        </motion.div>
-
-      </section>
-
-      {/* ================= FEATURES ================= */}
-
-      <section
-        id="features"
-        className="max-w-7xl mx-auto px-8 py-32 grid md:grid-cols-3 gap-10"
-      >
-
-        {[
-          {
-            title: "Expense Tracking",
-            desc: "AI automatically categorizes transactions and shows spending insights."
-          },
-
-          {
-            title: "Tax Optimization",
-            desc: "Smart tax estimation and deduction suggestions."
-          },
-
-          {
-            title: "Financial Forecasting",
-            desc: "Predict savings and investments using AI models."
-          }
-
-        ].map((feature, i) => (
-
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, y: 40 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ delay: i * 0.2 }}
-            className="bg-black/40 border border-white/10 rounded-2xl p-8 hover:border-teal-400 transition backdrop-blur-lg"
-          >
-
-            <h3 className="text-xl font-semibold text-teal-300 mb-4">
-              {feature.title}
-            </h3>
-
-            <p className="text-slate-400 leading-relaxed">
-              {feature.desc}
-            </p>
-
-          </motion.div>
-
-        ))}
-
-      </section>
-
-      {/* ================= PRICING ================= */}
-
-      <section
-        id="pricing"
-        className="max-w-6xl mx-auto text-center py-32 px-8"
-      >
-
-        <h2 className="text-4xl font-bold mb-16">
-          Simple Pricing
-        </h2>
-
-        <div className="grid md:grid-cols-3 gap-10">
-
-          {[
-            { name: "Free", price: "₹0" },
-            { name: "Pro", price: "₹499/mo" },
-            { name: "Enterprise", price: "Custom" },
-          ].map((p, i) => (
-
-            <div
-              key={i}
-              className="border border-white/10 rounded-2xl p-10 bg-black/40 hover:border-teal-400 transition backdrop-blur-lg"
-            >
-
-              <h3 className="text-xl mb-4">{p.name}</h3>
-
-              <p className="text-4xl font-bold text-teal-300 mb-6">
-                {p.price}
-              </p>
-
-              <button className="bg-teal-400 text-black px-6 py-3 rounded-lg font-semibold hover:scale-105 transition">
-                Choose Plan
-              </button>
-
-            </div>
-
-          ))}
-
         </div>
+      </header>
 
-      </section>
+      <main id="main" tabIndex={-1} className="outline-none">
+        <Hero signedIn={signedIn} />
+        <div id="story" className="scroll-mt-16">
+          <SummaryChapter />
+          <LedgerChapter />
+          <TaxChapter />
+          <VaultChapter />
+        </div>
+        <FlowSection />
+        <AskSection />
+        <Principles />
 
-      {/* ================= CTA ================= */}
+        <section aria-labelledby="final-title" className="border-t border-divider py-24 sm:py-36">
+          <div className="mx-auto max-w-[84rem] px-gutter text-center">
+            <h2 id="final-title" className="mx-auto max-w-4xl font-display text-[clamp(2.75rem,1.4rem+5.2vw,5.5rem)] font-semibold leading-[1.02] tracking-[-0.04em] text-foreground">
+              Know every figure.
+              <br />
+              <span className="text-foreground-muted">See every step.</span>
+            </h2>
+            <p className="mx-auto mt-6 max-w-lg text-body-lg text-foreground-secondary">
+              Record what comes in and what goes out. SmartCA does the arithmetic, works out your tax, and shows its working.
+            </p>
+            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Link href={signedIn ? "/dashboard" : "/signup"} className={buttonClasses("primary", "lg", "w-full sm:w-auto")}>
+                {signedIn ? "Open SmartCA" : "Get started"}
+              </Link>
+              {!signedIn && (
+                <Link href="/login" className={buttonClasses("outline", "lg", "w-full sm:w-auto")}>
+                  Sign in
+                </Link>
+              )}
+            </div>
+          </div>
+        </section>
+      </main>
 
-      <section className="text-center pb-24">
-
-        <h2 className="text-4xl font-bold">
-          Ready to Take Control of Your Finances?
-        </h2>
-
-        <Link
-          href="/signup"
-          className="inline-block mt-8 bg-teal-400 text-black px-10 py-4 rounded-xl font-semibold hover:scale-105 transition shadow-lg"
-        >
-          Start Using SmartCA
-        </Link>
-
-      </section>
-
-      {/* ================= FOOTER ================= */}
-
-      <footer className="border-t border-white/10 py-8 text-center text-slate-400 text-sm">
-        © {new Date().getFullYear()} SmartCA
+      <footer className="border-t border-divider">
+        <div className="mx-auto flex max-w-[84rem] flex-col gap-4 px-gutter py-10 sm:flex-row sm:items-center sm:justify-between">
+          <Wordmark />
+          <p className="max-w-xl text-label text-foreground-muted">
+            SmartCA computes tax for resident individuals for AY 2026-27 and lists what it doesn’t cover. It isn’t tax advice; check with a
+            chartered accountant before you file.
+          </p>
+        </div>
       </footer>
-
-    </main>
+    </div>
   );
 }

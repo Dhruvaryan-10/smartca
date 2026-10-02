@@ -93,6 +93,17 @@ Scrolling is reading. Content does not move unless the person moves it.
 
 ### On marketing and onboarding pages (landing, Phase 8)
 
+**Implemented on `/landing`** (`app/landing/landing.css`). This needs no JavaScript and no new dependency:
+
+- **Signature sequence.** The hero is a 250vh section with a sticky stage.
+  - The stage shows a SmartCA Summary composition, built from real tokens and with figures computed by the real ledger summary and tax engine. It begins tilted in 3D with its pieces scattered in depth.
+  - Driven by the section's view timeline, it settles flat while the pieces dock into place: net savings, the money-flow bar, monthly bars, recent entries, the tax result and the Ask SmartCA launcher.
+  - Four steps beside it light up in order. They are always readable; only their emphasis changes.
+- **Chapters.** The product visuals drift by ±28px with scroll. The connectors in "From income to insight" draw as they enter.
+- **Header.** It gains its edge and shadow over the first 96px of scroll.
+- **Conditions.** All of this runs only at ≥1024px, without reduced motion, and in browsers with scroll-driven animations. Otherwise the composition is fully assembled and static, with nothing sticky and nothing hidden.
+- **Overflow.** Horizontal overflow is clipped with `overflow-x: clip`, which keeps sticky positioning working.
+
 These pages can tell a story, so they get a little more freedom, with strict limits:
 
 - **Sticky storytelling sections.** One pinned narrative at most, for example the computation sheet building itself line by line as the reader scrolls. Each step's content must also exist as plain readable text.

@@ -21,9 +21,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SmartCA | AI Finance & Tax Management",
+  title: "SmartCA",
   description:
-    "SmartCA helps you manage income, expenses, taxes and financial insights with AI-powered automation.",
+    "A calm ledger for your income, spending and tax. SmartCA does the arithmetic, compares both tax regimes and shows every step.",
 };
 
 // Applies a saved theme preference before first paint (no flash of the
