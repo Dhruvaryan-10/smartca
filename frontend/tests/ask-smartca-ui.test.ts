@@ -5,6 +5,7 @@
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
+  MAX_QUESTION_CHARS,
   MAX_SENT_MESSAGES,
   deleteConsent,
   fetchConsentStatus,
@@ -19,6 +20,7 @@ import {
   type ServerErrorCategory,
 } from "../app/components/assistant/assistant-client";
 import { MAX_USER_MESSAGES } from "../services/assistant/ask";
+import { MAX_MESSAGE_CHARS } from "../services/assistant/model";
 import type { Answer } from "../lib/assistant/answer";
 import type { AssistantApiErrorCategory } from "../services/assistant/api-contract";
 import type { ConsentDisclosure, ConsentStatus } from "../services/assistant/consent-contract";
@@ -58,6 +60,10 @@ const error = (over: Partial<ClientError>): ClientError => ({ code: "x", categor
 
 test("the message cap mirrors the server's", () => {
   assert.equal(MAX_SENT_MESSAGES, MAX_USER_MESSAGES);
+});
+
+test("the question length cap mirrors the server's", () => {
+  assert.equal(MAX_QUESTION_CHARS, MAX_MESSAGE_CHARS);
 });
 
 test("postQuestion posts only { messages }, capped to the most recent allowed", async () => {

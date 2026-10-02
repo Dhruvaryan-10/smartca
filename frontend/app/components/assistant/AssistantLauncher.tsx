@@ -9,6 +9,7 @@ import { IconArrowUp, IconAsk, IconClose } from "../ui/Icons";
 import { AnswerView } from "./AnswerView";
 import { ConsentReview } from "./ConsentReview";
 import {
+  MAX_QUESTION_CHARS,
   deleteConsent,
   fetchConsentDisclosure,
   fetchConsentStatus,
@@ -368,6 +369,8 @@ export default function AssistantLauncher() {
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={onComposerKeyDown}
                   rows={1}
+                  maxLength={MAX_QUESTION_CHARS}
+                  aria-describedby={draft.length > MAX_QUESTION_CHARS * 0.9 ? `${titleId}-count` : undefined}
                   placeholder="Ask about your money or tax"
                   className="field-sizing-content max-h-40 min-h-11 flex-1 resize-none rounded-control border border-field-border bg-surface-sunken px-3 py-2.5 text-base text-foreground placeholder:text-foreground-muted focus-visible:focus-ring sm:text-body"
                 />
@@ -380,6 +383,11 @@ export default function AssistantLauncher() {
                   <IconArrowUp />
                 </button>
               </form>
+              {draft.length > MAX_QUESTION_CHARS * 0.9 && (
+                <p id={`${titleId}-count`} className="mt-1.5 text-right font-numeric text-micro text-foreground-muted" aria-live="polite">
+                  {draft.length.toLocaleString("en-IN")} of {MAX_QUESTION_CHARS.toLocaleString("en-IN")} characters
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-micro text-foreground-muted">
                 <span>Explanations are written by a language model. Check them against the sources shown.</span>
                 <span>

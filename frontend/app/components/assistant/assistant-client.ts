@@ -12,6 +12,8 @@
 
 /** The most user messages one request may carry (the server's limit; a test pins that they agree). */
 export const MAX_SENT_MESSAGES = 20;
+/** The longest question the server accepts, in characters (the server's per-message limit; a test pins that they agree). */
+export const MAX_QUESTION_CHARS = 50_000;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Wire types

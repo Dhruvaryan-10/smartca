@@ -309,6 +309,12 @@ test("the system prompt keeps the safety rules: tools decide, no arithmetic, no 
   }
 });
 
+test("the system prompt says when SmartCA lacks the data, never invents figures, and is not tax advice", () => {
+  for (const rule of [/does not have that information/i, /never invent a transaction, a total, a date or a tax figure/i, /not professional tax advice/i, /chartered accountant/i]) {
+    assert.match(ORCHESTRATOR_SYSTEM_PROMPT, rule);
+  }
+});
+
 // --- errors --------------------------------------------------------------------------
 
 test("an invalid model response is a typed error, and a provider failure is not swallowed", async () => {
