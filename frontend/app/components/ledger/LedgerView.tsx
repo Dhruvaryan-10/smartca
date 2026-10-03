@@ -25,6 +25,7 @@ import { Money } from "../ui/Money";
 import { PageHeader } from "../ui/PageHeader";
 import { ErrorState, Skeleton } from "../ui/States";
 import { messageOf, requestJson } from "../request";
+import { fetchTransactions } from "../transactions-client";
 import { LedgerList } from "./LedgerList";
 import { TransactionDialog } from "./TransactionDialog";
 
@@ -71,11 +72,7 @@ export function LedgerView({ type }: { type: LedgerType }) {
   const [highlight, setHighlight] = useState<{ id: string; nonce: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const fetchRows = useCallback(async () => {
-    const data = await requestJson<unknown>("/api/transactions");
-    if (!Array.isArray(data)) throw new Error("Unexpected response shape");
-    return data as LedgerTransaction[];
-  }, []);
+  const fetchRows = useCallback(() => fetchTransactions<LedgerTransaction>(), []);
 
   useEffect(() => {
     let cancelled = false;

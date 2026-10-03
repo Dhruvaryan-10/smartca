@@ -2,48 +2,34 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { generateInsights, type InsightTransaction } from "@/lib/insights";
 import { PageHeader } from "../../components/ui/PageHeader";
 import { buttonClasses } from "../../components/ui/Button";
 import { Badge } from "../../components/ui/Badge";
 import { IconAsk, IconSummary } from "../../components/ui/Icons";
 import { ErrorState, Skeleton } from "../../components/ui/States";
+import { fetchTransactions } from "../../components/transactions-client";
 
-// Shape returned by GET /api/transactions (services/transactions.ts —
-// Postgres/Drizzle rows, not the old Mongo shape). Money is integer
-// paise on the wire, per the schema's money convention.
-interface Transaction {
-  id: string;
-  type: "income" | "expense";
-  amountPaise: number;
-  category: string;
-  description: string | null;
-  occurredOn: string;
-}
-
-type Load = { status: "loading" } | { status: "error" } | { status: "ready"; transactions: Transaction[] };
+// Rows from GET /api/transactions (services/transactions.ts). Money is integer paise on the wire; the rules live in
+// lib/insights.ts.
+type Load = { status: "loading" } | { status: "error" } | { status: "ready"; transactions: InsightTransaction[] };
 
 export default function InsightsPage() {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    let cancelled = false;
-    fetch("/api/transactions")
-      .then((res) => res.json())
-      .then((data) => !cancelled && setLoad({ status: "ready", transactions: Array.isArray(data) ? data : [] }))
+    const controller = new AbortController();
+    fetchTransactions<InsightTransaction>(controller.signal)
+      .then((transactions) => setLoad({ status: "ready", transactions }))
       .catch((err: unknown) => {
-        console.error(err);
-        if (!cancelled) setLoad({ status: "error" });
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setLoad({ status: "error" });
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [attempt]);
 
-  const transactions = load.status === "ready" ? load.transactions : [];
-  const income = transactions.filter((t) => t.type === "income");
-  const expense = transactions.filter((t) => t.type === "expense");
-  const insights = generateInsights(income, expense);
+  const insights = load.status === "ready" ? generateInsights(load.transactions) : [];
 
   return (
     <>
@@ -108,99 +94,6 @@ export default function InsightsPage() {
         ))}
     </>
   );
-}
-
-function generateInsights(
-  income: Transaction[],
-  expense: Transaction[]
-) {
-
-  const insights: string[] = [];
-
-  // Sum in integer paise first, convert to rupees once — every
-  // threshold/message below is unchanged, just fed correct amounts now.
-  const totalIncome = income.reduce((s, i) => s + i.amountPaise, 0) / 100;
-  const totalExpense = expense.reduce((s, i) => s + i.amountPaise, 0) / 100;
-  const savings = totalIncome - totalExpense;
-
-  /* 1️⃣ Savings Health */
-  if (totalIncome > 0) {
-    const rate = (savings / totalIncome) * 100;
-
-    if (rate < 20) {
-      insights.push(
-        "⚠️ Your savings rate is below 20%. Consider reducing discretionary expenses."
-      );
-    } else if (rate < 40) {
-      insights.push(
-        "👍 Your savings are decent, but you can improve further."
-      );
-    } else {
-      insights.push(
-        "🔥 Excellent! You have a strong savings habit."
-      );
-    }
-  }
-
-  /* 2️⃣ Top Expense Category */
-  // Summed in paise — never displayed as a value, only compared to find
-  // the max, so no rupee conversion is needed here.
-  const categoryMapPaise: Record<string, number> = {};
-
-  expense.forEach((e) => {
-    categoryMapPaise[e.category] =
-      (categoryMapPaise[e.category] || 0) + e.amountPaise;
-  });
-
-  let maxCategory = "";
-  let maxValue = 0;
-
-  for (const key in categoryMapPaise) {
-    if (categoryMapPaise[key] > maxValue) {
-      maxValue = categoryMapPaise[key];
-      maxCategory = key;
-    }
-  }
-
-  if (maxCategory) {
-    insights.push(
-      `📊 Highest spending is on ${maxCategory}. Try optimizing this category.`
-    );
-  }
-
-  if (totalExpense > totalIncome) {
-    insights.push(
-      "🚨 Your expenses exceed income. Immediate budgeting needed."
-    );
-  }
-
-  if (totalIncome === 0) {
-    insights.push(
-      "💡 Add income sources to unlock meaningful insights."
-    );
-  }
-
-  if (totalExpense > 0) {
-    insights.push(
-      `💰 You could save ₹${Math.round(
-        totalExpense * 0.1
-      )} monthly by cutting 10% expenses.`
-    );
-  }
-
-  if (income.length < 2 && totalIncome > 0) {
-    insights.push(
-      "⚡ Consider adding multiple income streams for stability."
-    );
-  }
-
-  if (expense.length > 5) {
-    insights.push(
-      "🧾 You have many small expenses. Track subscriptions and daily spending."
-    );
-  }
-
-  return insights;
 }
 
 // The rules above mark each tip with a leading symbol. The interface shows

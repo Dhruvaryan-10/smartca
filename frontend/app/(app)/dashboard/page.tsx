@@ -13,6 +13,7 @@ import MonthlyChart, { MonthHighlight } from "./MonthlyChart";
 import { RecentActivity } from "./RecentActivity";
 import { CompositionBreakdown } from "../../components/charts/SpendingBreakdown";
 import { SummaryHero } from "./SummaryHero";
+import { fetchTransactions } from "../../components/transactions-client";
 
 // Shape returned by GET /api/transactions (services/transactions.ts).
 // Money is integer paise on the wire and stays paise until it is rendered
@@ -30,13 +31,8 @@ export default function Dashboard() {
   useEffect(() => {
     const controller = new AbortController();
 
-    fetch("/api/transactions", { signal: controller.signal })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Request failed with ${res.status}`);
-        const data: unknown = await res.json();
-        if (!Array.isArray(data)) throw new Error("Unexpected response shape");
-        setState({ status: "ready", transactions: data as SummaryTransaction[] });
-      })
+    fetchTransactions<SummaryTransaction>(controller.signal)
+      .then((transactions) => setState({ status: "ready", transactions }))
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         console.warn("Summary: could not load transactions", err);

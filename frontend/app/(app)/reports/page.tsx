@@ -15,6 +15,7 @@ import { PageHeader, Section } from "../../components/ui/PageHeader";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { ErrorState, Skeleton } from "../../components/ui/States";
 import { usePrefersReducedMotion } from "../../components/useReducedMotion";
+import { fetchTransactions } from "../../components/transactions-client";
 
 // Shape returned by GET /api/transactions (services/transactions.ts —
 // Postgres/Drizzle rows, not the old Mongo shape). Money is integer
@@ -37,20 +38,16 @@ export default function ReportsPage() {
   const [load, setLoad] = useState<Load>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
 
-  // FETCH DATA (the same request as before; a failure now shows an error
-  // state instead of an empty report).
+  // Any failure (session, server, network, malformed body) shows the error state; only a genuine `[]` is an empty report.
   useEffect(() => {
-    let cancelled = false;
-    fetch("/api/transactions")
-      .then((res) => res.json())
-      .then((data) => !cancelled && setLoad({ status: "ready", transactions: Array.isArray(data) ? data : [] }))
+    const controller = new AbortController();
+    fetchTransactions<Transaction>(controller.signal)
+      .then((transactions) => setLoad({ status: "ready", transactions }))
       .catch((err: unknown) => {
-        console.error(err);
-        if (!cancelled) setLoad({ status: "error" });
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setLoad({ status: "error" });
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [attempt]);
 
   return (
