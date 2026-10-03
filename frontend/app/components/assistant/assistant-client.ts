@@ -19,7 +19,7 @@ export const MAX_QUESTION_CHARS = 50_000;
 // Wire types
 // ---------------------------------------------------------------------------------------------------------------------------------
 
-export type AnswerState = "answered" | "insufficient_evidence" | "unsupported" | "withheld";
+export type AnswerState = "answered" | "insufficient_evidence" | "unsupported" | "withheld" | "needs_clarification";
 type FactOrigin = Readonly<{ callId: string; round: number }>;
 
 export type AnswerEvidence = Readonly<{
@@ -32,7 +32,7 @@ export type AnswerEvidence = Readonly<{
 }>;
 export type AnswerTaxValue = FactOrigin &
   Readonly<{
-    shape: "single_regime" | "regime_comparison" | "scenario";
+    shape: "single_regime" | "regime_comparison" | "scenario" | "saved_computation";
     assessmentYear: string;
     engineVersion: string | null;
     rulesVersion: string | null;
@@ -53,6 +53,8 @@ export type AssistantAnswer = Readonly<{
   }>;
   notices: readonly string[];
   authority: Readonly<{ guidanceOnly: boolean }>;
+  /** Which checks a withheld answer failed, by code only. Never shown as is: `detail` can quote the withheld text. */
+  violations?: ReadonlyArray<Readonly<{ code: string; severity: string }>>;
 }>;
 
 export type ConsentStatusView = Readonly<{ state: string; valid: boolean; recipient: string; expiresAt: string | null }>;

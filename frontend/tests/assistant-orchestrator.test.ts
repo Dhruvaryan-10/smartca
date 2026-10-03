@@ -83,9 +83,9 @@ test("several tool calls, in one round and across rounds, run in order and each 
 
 // --- allow-list ----------------------------------------------------------------------
 
-test("only the six named tools exist: the definitions are exactly them, and get_tax_deadlines is not one", () => {
+test("only the seven named tools exist: the definitions are exactly them, and get_tax_deadlines is not one", () => {
   assert.deepEqual(ASSISTANT_TOOL_DEFINITIONS.map((d) => d.name).sort(), [...ASSISTANT_TOOL_NAMES].sort());
-  assert.deepEqual([...ASSISTANT_TOOL_NAMES].sort(), ["calculate_tax", "compare_tax_regimes", "get_financial_summary", "query_transactions", "search_tax_law", "simulate_tax"]);
+  assert.deepEqual([...ASSISTANT_TOOL_NAMES].sort(), ["calculate_tax", "compare_tax_regimes", "get_financial_summary", "get_saved_tax_computation", "query_transactions", "search_tax_law", "simulate_tax"]);
   assert.equal(ASSISTANT_TOOL_DEFINITIONS.some((d) => /deadline/.test(d.name)), false);
 });
 
@@ -229,7 +229,8 @@ test("the tool schemas are strict, and match what the argument validators accept
   }
   const fields = (name: string) => Object.keys((byName.get(name)!.parameters.properties ?? {}) as object).sort();
   assert.deepEqual(fields("search_tax_law"), ["assessmentYear", "question", "sectionRef"]);
-  assert.deepEqual(fields("query_transactions"), ["category", "from", "includeDescription", "limit", "to", "type"]);
+  assert.deepEqual(fields("query_transactions"), ["category", "from", "includeDescription", "limit", "sort", "to", "type"]);
+  assert.deepEqual(fields("get_saved_tax_computation"), ["assessmentYear"]);
   assert.deepEqual(fields("get_financial_summary"), ["from", "to"]);
   assert.deepEqual(fields("calculate_tax"), ["ageCategory", "assessmentYear", "deductions", "income", "regime"]);
   assert.deepEqual(fields("compare_tax_regimes"), ["ageCategory", "assessmentYear", "deductions", "income"]);
@@ -397,6 +398,17 @@ test("the system prompt says a figure the person states is their assumption, nev
 test("the system prompt requires a tool call for the person's own figures and forbids an invented refusal (found with a real local model)", () => {
   // A real model answered "What are my total expenses?" without calling any tool, claiming SmartCA had refused for privacy reasons.
   for (const rule of [/call a tool before answering/i, /never say that SmartCA or a tool refused unless a tool result in this conversation is a refusal/i]) {
+    assert.match(ORCHESTRATOR_SYSTEM_PROMPT, rule);
+  }
+});
+
+test("the system prompt asks for source-aware answers, evidence-named investments, clarification and the saved computation (Phase 15B)", () => {
+  for (const rule of [
+    /According to the cited Income Tax Department guidance/, /SmartCA's tax engine calculated/, /From your SmartCA ledger/, /never a conclusion about the person's own eligibility/i,
+    /Never say a named investment or scheme .* qualifies unless a cited passage names it/i,
+    /begins with CLARIFY:/, /Do not ask when a tool can answer/i,
+    /use get_saved_tax_computation/, /do not recompute it/i,
+  ]) {
     assert.match(ORCHESTRATOR_SYSTEM_PROMPT, rule);
   }
 });

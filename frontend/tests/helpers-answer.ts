@@ -123,6 +123,7 @@ export function transactionsRecord(rows: LedgerRow[], callId = "txn1", round = 1
   return record(round, callId, "query_transactions", okEnvelope("query_transactions", {
     filter: { from: null, to: null, category: null, type: null },
     descriptionsIncluded: rows.some((r) => r.description !== undefined),
+    sortedBy: "date",
     matched: rows.length, returned: rows.length, truncated: false, fieldsTruncated: false,
     totals: { incomePaise, expensePaise },
     transactions: rows,

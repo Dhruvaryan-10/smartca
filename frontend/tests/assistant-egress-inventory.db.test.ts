@@ -21,6 +21,8 @@ import { createAssistantTools } from "../services/assistant/tools";
 import { filterToolResult } from "../lib/assistant/egress-filter";
 import type { AssistantToolDeps } from "../services/assistant/tools";
 import type { TaxEvidence, TaxRetrievalInput, TaxRetrievalResult } from "../services/tax-retrieval";
+import { calculateTax, comparisonNumbers } from "../tax-engine";
+import type { ComparisonInput } from "../tax-engine";
 
 const USER = "8f3a1c0e-5b7d-4c1a-9e2f-0a1b2c3d4e5f";
 type Marker = "ledger" | "argument" | "corpus";
@@ -89,6 +91,12 @@ const taxBody = {
 };
 const extraKey = { [MARK.argument]: 1 };
 
+// A saved computation as services/tax.ts returns it: the engine's own results for both regimes.
+const savedInput: ComparisonInput = { assessmentYearLabel: "2026-27", ageCategory: "below60", incomeSources: [{ kind: "salary", label: "Salary", amountPaise: 150_000_000 }], deductions: [] };
+const savedOld = calculateTax({ ...savedInput, regime: "old" });
+const savedNew = calculateTax({ ...savedInput, regime: "new" });
+const savedComputation = async () => ({ assessmentYear: "2026-27", savedAt: "2026-10-01T10:00:00.000Z", savedComputations: 2, input: savedInput, results: { old: savedOld, new: savedNew }, numbers: comparisonNumbers(savedOld, savedNew) });
+
 /** Each tool's calls: its ok path, and refusal paths fed argument text (an unknown field NAME, an over-long or unmatched value). */
 const PROBES: Record<ToolName, Array<{ deps: AssistantToolDeps; args: unknown }>> = {
   search_tax_law: [
@@ -102,6 +110,7 @@ const PROBES: Record<ToolName, Array<{ deps: AssistantToolDeps; args: unknown }>
     { deps: {}, args: { category: MARK.argument, type: "expense", from: "2026-01-01", to: "2026-12-31", limit: 5 } },
     { deps: {}, args: { category: `${MARK.argument}${"x".repeat(2_000)}` } },
     { deps: {}, args: extraKey },
+    { deps: {}, args: { sort: "amount" } },
   ],
   get_financial_summary: [
     { deps: {}, args: {} },
@@ -122,6 +131,12 @@ const PROBES: Record<ToolName, Array<{ deps: AssistantToolDeps; args: unknown }>
     { deps: {}, args: { regime: "old", base: { ...taxBody, deductions: {} }, scenario: taxBody } },
     { deps: {}, args: { regime: "old", base: taxBody, scenario: taxBody, ...extraKey } },
     { deps: {}, args: { regime: "old", base: { ...taxBody, ...extraKey }, scenario: taxBody } },
+  ],
+  get_saved_tax_computation: [
+    { deps: { getLatestSavedTaxComputation: savedComputation }, args: {} },
+    { deps: { getLatestSavedTaxComputation: savedComputation }, args: { assessmentYear: "2026-27" } },
+    { deps: { getLatestSavedTaxComputation: async () => null }, args: {} },
+    { deps: { getLatestSavedTaxComputation: savedComputation }, args: extraKey },
   ],
 };
 

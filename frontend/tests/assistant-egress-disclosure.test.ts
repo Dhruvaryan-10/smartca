@@ -118,7 +118,9 @@ test("the inventory fingerprint is stable, and changes when any field or class c
 test("TRIPWIRE: the inventory fingerprint in force is pinned, because changing it invalidates every stored consent", () => {
   // Any change to ASSISTANT_EGRESS_INVENTORY (a field, class or tool) changes this value, and then every stored grant is refused as
   // consent_outdated until the person grants the new disclosure (ADR 0002). Update the pin only as that deliberate, reviewed decision.
-  assert.equal(fingerprintInventory(), "inv1-cab11f51");
+  // inv1-cab11f51 -> inv1-2ef3afeb (2026-10-03): the inventory gained get_saved_tax_computation and query_transactions's
+  // result.sortedBy. Every stored consent names the old fingerprint, so each person sees the new disclosure and grants again.
+  assert.equal(fingerprintInventory(), "inv1-2ef3afeb");
 });
 
 test("a malformed request is a RangeError, and the result is frozen", () => {

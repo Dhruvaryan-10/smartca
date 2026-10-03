@@ -14,12 +14,33 @@ const STATE_COPY: Record<Exclude<AnswerState, "answered">, { title: string; body
     title: "Answer withheld",
     body: "SmartCA wrote an answer but held it back because it didn't pass its accuracy checks. Try rephrasing the question.",
   },
+  needs_clarification: {
+    title: "SmartCA needs one detail",
+    body: "Answer the question below in your next message.",
+  },
 };
+
+// Why an answer was withheld, in the person's terms, from the first blocking check it failed. Only the CODE is used: a
+// violation's detail can quote the text that was withheld, so it is never shown.
+const WITHHELD_REASON: Record<string, string> = {
+  ungrounded_figure: "A figure in it didn't match your SmartCA data or the cited sources, so SmartCA held it back.",
+  regime_unattributed: "It stated a tax amount without saying which regime it was for.",
+  regime_recommendation: "It recommended a tax regime. SmartCA shows both regimes' figures and leaves the choice to you.",
+  unsupported_deadline: "It stated a deadline. SmartCA has no reviewed source for tax deadlines yet.",
+  authority_upgrade: "It quoted the law with more authority than SmartCA's sources have (they are official guidance, not the Act).",
+  law_claim_without_evidence: "It made a claim about the law that SmartCA's official sources don't support.",
+  unsupported_instrument: "It said an investment qualifies for a deduction, but SmartCA's official sources don't name it. Check the eligibility with the scheme or a chartered accountant.",
+};
+function withheldReason(answer: AssistantAnswer): string | null {
+  const blocking = (answer.violations ?? []).find((v) => v.severity === "blocking" && v.code in WITHHELD_REASON);
+  return blocking ? WITHHELD_REASON[blocking.code] : null;
+}
 
 const TAX_SHAPE: Record<AnswerTaxValue["shape"], string> = {
   single_regime: "Tax computed by the SmartCA tax engine",
   regime_comparison: "Regime comparison from the SmartCA tax engine",
   scenario: "Scenario computed by the SmartCA tax engine",
+  saved_computation: "Your saved computation, from the SmartCA tax engine",
 };
 
 // One answer, laid out like a CA's working papers: the explanation (the
@@ -29,20 +50,22 @@ const TAX_SHAPE: Record<AnswerTaxValue["shape"], string> = {
 export function AnswerView({ answer }: { answer: AssistantAnswer }) {
   const { text, citations, facts, notices, authority } = answer;
   const stateCopy = answer.state === "answered" ? null : STATE_COPY[answer.state];
+  const reason = answer.state === "withheld" ? withheldReason(answer) : null;
+  const clarifying = answer.state === "needs_clarification";
 
   return (
     <div className="space-y-4">
       {stateCopy && (
-        <div className="rounded-md bg-warning-soft px-3.5 py-3">
+        <div className={`rounded-md px-3.5 py-3 ${clarifying ? "bg-info-soft" : "bg-warning-soft"}`}>
           <p className="text-body font-medium text-foreground">{stateCopy.title}</p>
-          <p className="mt-1 text-label text-foreground-secondary">{stateCopy.body}</p>
+          <p className="mt-1 text-label text-foreground-secondary">{reason ?? stateCopy.body}</p>
         </div>
       )}
 
       {text && (
         <div>
           <div className="flex items-center gap-2">
-            <p className="text-micro font-medium text-foreground-muted">Explanation</p>
+            <p className="text-micro font-medium text-foreground-muted">{clarifying ? "Question" : "Explanation"}</p>
             {authority.guidanceOnly && <Badge tone="info">Guidance only</Badge>}
           </div>
           <p className="mt-1.5 whitespace-pre-wrap break-words text-body-lg text-foreground">{text.content}</p>

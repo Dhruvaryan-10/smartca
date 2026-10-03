@@ -382,6 +382,34 @@ async function loadLedgerSuggestion(userId: string, year: AssessmentYearRow): Pr
   };
 }
 
+/** A saved computation as the assistant may see it: what was saved, exactly as stored, and nothing that identifies a row. */
+export type LatestSavedTaxComputation = {
+  assessmentYear: string;
+  /** When it was saved (ISO). */
+  savedAt: string;
+  /** How many saved computations the person has for this assessment year (this is the newest). */
+  savedComputations: number;
+  input: SavedTaxRun["input"];
+  results: SavedTaxRun["results"];
+  numbers: SavedTaxRun["numbers"];
+};
+
+/**
+ * The signed-in person's most recently saved computation for an assessment year (the newest supported one by default), read
+ * only, or null when they have saved none. User-scoped by the same query as the Tax page; the run id is not returned.
+ */
+export async function getLatestSavedTaxComputation(userId: string, requestedLabel?: string): Promise<LatestSavedTaxComputation | null> {
+  requireUserId(userId);
+  const supported = getSupportedAssessmentYearLabels();
+  const label = requestedLabel ?? [...supported].sort().at(-1);
+  if (!label || !supported.includes(label)) throw new UnsupportedAssessmentYearError(label ?? "");
+  const year = await loadAssessmentYear(label);
+  const runs = await loadSavedRuns(userId, year.id); // newest first
+  const latest = runs[0];
+  if (!latest) return null;
+  return { assessmentYear: label, savedAt: latest.savedAt, savedComputations: runs.length, input: latest.input, results: latest.results, numbers: latest.numbers };
+}
+
 /**
  * Everything the Tax page needs to render: the supported assessment year, a
  * ledger suggestion for that year, and the user's own saved computations.

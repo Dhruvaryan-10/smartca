@@ -118,7 +118,9 @@ export function readSearchTaxLawArgs(args: unknown): SearchTaxLawArgs {
 // ---------------------------------------------------------------------
 
 export type TransactionFilter = { from: string | null; to: string | null; category: string | null; type: "income" | "expense" | null };
-export type QueryTransactionsArgs = TransactionFilter & { limit: number; includeDescription: boolean };
+/** "date": newest first (the default). "amount": largest first, so "my largest expense" needs no arithmetic from the model. */
+export type TransactionSort = "date" | "amount";
+export type QueryTransactionsArgs = TransactionFilter & { limit: number; includeDescription: boolean; sort: TransactionSort };
 export type FinancialSummaryArgs = { from: string | null; to: string | null };
 
 function readPeriod(record: Record<string, unknown>): { from: string | null; to: string | null } {
@@ -130,7 +132,7 @@ function readPeriod(record: Record<string, unknown>): { from: string | null; to:
 
 export function readQueryTransactionsArgs(args: unknown): QueryTransactionsArgs {
   const record = objectOf(args, "query_transactions arguments");
-  onlyFields(record, ["from", "to", "category", "type", "limit", "includeDescription"], "query_transactions");
+  onlyFields(record, ["from", "to", "category", "type", "limit", "includeDescription", "sort"], "query_transactions");
 
   const type = record.type;
   if (type !== undefined && type !== "income" && type !== "expense") throw new ToolArgumentError('type must be "income" or "expense".');
@@ -140,12 +142,15 @@ export function readQueryTransactionsArgs(args: unknown): QueryTransactionsArgs 
   }
   const includeDescription = record.includeDescription;
   if (includeDescription !== undefined && typeof includeDescription !== "boolean") throw new ToolArgumentError("includeDescription must be true or false.");
+  const sort = record.sort;
+  if (sort !== undefined && sort !== "date" && sort !== "amount") throw new ToolArgumentError('sort must be "date" or "amount".');
   return {
     ...readPeriod(record),
     category: optionalText(record, "category", MAX_CATEGORY_CHARS),
     type: type ?? null,
     limit: limit ?? DEFAULT_TRANSACTION_LIMIT,
     includeDescription: includeDescription ?? false,
+    sort: sort ?? "date",
   };
 }
 
@@ -153,6 +158,16 @@ const dayNumber = (iso: string): number => {
   const [year, month, day] = iso.split("-").map(Number);
   return Date.UTC(year, month - 1, day) / 86_400_000;
 };
+
+/** get_saved_tax_computation: an optional assessment year, nothing else. */
+export function readSavedTaxComputationArgs(args: unknown): { assessmentYear: string | null } {
+  const record = objectOf(args, "get_saved_tax_computation arguments");
+  onlyFields(record, ["assessmentYear"], "get_saved_tax_computation");
+  const year = record.assessmentYear;
+  if (year === undefined) return { assessmentYear: null };
+  if (typeof year !== "string" || !ASSESSMENT_YEAR_SHAPE.test(year)) throw new ToolArgumentError('assessmentYear must look like "2026-27".');
+  return { assessmentYear: year };
+}
 
 /**
  * Either no period (the tool then applies defaultSummaryPeriod) or BOTH ends, at most MAX_SUMMARY_RANGE_DAYS apart.
