@@ -81,6 +81,40 @@ and anything missing fails closed, naming the variable and never its value.
    spend this month?") and a tax question ("Explain my latest tax calculation"), and check that the figures carry the ledger and
    tax-engine marks.
 
+## Local model (development only, ADR 0005)
+
+A real model on your own machine, so the whole pipeline can be tested without sending anyone's data to a hosted provider. It is
+not a production option and not a route to one: the endpoint must be a loopback IP.
+
+1. **Install and start the model.** Install Ollama (`winget install Ollama.Ollama` on Windows, or ollama.com), which runs a server on
+   `127.0.0.1:11434` only. Pull the model once: `ollama pull qwen2.5:7b-instruct` (about 4.7 GB; an 8 GB GPU runs it). Do not use a
+   "local router" that forwards to cloud APIs (for example FreeLLMAPI): that is a hosted provider, refused here (ADR 0005).
+2. **Configure** in `frontend/.env.local` (never committed). Names only; every one is required:
+   `ASSISTANT_ENABLED=true`, `ASSISTANT_ENV=local`, `MODEL_ENDPOINT` (`http://127.0.0.1:11434/v1/chat/completions`),
+   `MODEL_API_KEY` (any non-empty placeholder; Ollama ignores it), `MODEL_ID` (`qwen2.5:7b-instruct`),
+   `MODEL_APPROVED_RECIPIENTS` (one id, for example `local-ollama`), `MODEL_TIMEOUT_MS`, `MODEL_MAX_OUTPUT_CHARS`,
+   `MODEL_MAX_OUTPUT_TOKENS`, `MODEL_WIRE_FORMAT` (`openai-chat-completions-max-tokens`: Ollama takes `max_tokens`),
+   `ASSISTANT_RATE_WINDOW_SECONDS`, `ASSISTANT_MAX_RUNS_PER_WINDOW`, `ASSISTANT_MAX_CONCURRENT_RUNS`,
+   `ASSISTANT_MAX_TOKENS_PER_WINDOW`, `ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS`, `ASSISTANT_RUN_RETENTION_DAYS`.
+   A missing or invalid value fails closed, naming the variable. An endpoint that is not `127.0.0.1` or `[::1]` is refused.
+3. **How SmartCA connects.** Exactly the external path: the same consent, session, access plan, run limits and audit, tools, egress
+   filter, provider driver and answer layer. Runs are audited with mode `external` and recipient `local-ollama`.
+4. **Run the real test.** `npm run build`, then `AUTH_TRUST_HOST=true npm start`. Sign up, add transactions in the Ledger, open Ask
+   SmartCA, review the disclosure and allow it, then ask "What is my total income?" and check the figure against Summary.
+5. **Switch it off.** Set `ASSISTANT_ENABLED=false` (or remove the variables) and restart: the panel returns to its not-available
+   state.
+
+**What reaches the model** (the egress boundary, unchanged by local mode): the system prompt, the person's own questions, the tool
+definitions, and each tool result after the egress filter, with amounts written in rupees. Never a user id, email, name, row id,
+import field, password, session, key or database address; never another user's data (every tool runs for the session user only);
+nothing from Vault documents or saved tax computations (no tool reads them); a transaction's description only when the model asks
+for it (`includeDescription`), as the consent disclosure states. Verified on 2026-10-03 by capturing every request a real model
+received (151 calls).
+
+**Expect a 7B model to be imperfect.** It sometimes calls a tool with arguments the schema refuses (a controlled "could not
+complete"), and some answers are withheld by the answer layer. It must never show a wrong figure: the answer layer checks every
+figure against the tool results.
+
 ## Production requirements (independent of the assistant)
 
 - Auth.js needs `AUTH_TRUST_HOST=true` or `AUTH_URL` in production, otherwise sign-in fails with `UntrustedHost`.
