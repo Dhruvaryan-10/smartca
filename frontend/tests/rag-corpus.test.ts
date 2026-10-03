@@ -8,6 +8,7 @@
 // that mixes legislation, names a non-official host, or does not match its
 // files is refused with every problem listed; and the shipped corpus is
 // governed by the Income-tax Act, 1961, for AY 2026-27 only.
+import path from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -327,14 +328,16 @@ test("the shipped AY 2026-27 corpus is valid, governed by the 1961 Act, and only
 test("the shipped corpus covers the sections it claims to, and says plainly which it does not", () => {
   const corpus = loadCorpusFromDisk();
   const covered = new Set(corpus.sources.flatMap((s) => s.chunks.map((c) => c.sectionRef)).filter(Boolean));
-  for (const ref of ["87A", "115BAC", "80C", "80D"]) assert.ok(covered.has(ref), `Section ${ref} is in the corpus`);
+  for (const ref of ["87A", "115BAC", "80C", "80D", "80CCD(1b)", "80CCD(2)", "24(b)", "80DD", "80DDB", "80E", "80EE", "80EEA", "80EEB", "80G", "80GG", "80GGA", "80GGC", "80TTA", "80TTB", "80U"]) {
+    assert.ok(covered.has(ref), `Section ${ref} is in the corpus`);
+  }
 
   const topics = new Set(corpus.sources.flatMap((s) => s.chunks.flatMap((c) => c.topics)));
   for (const topic of ["surcharge", "cess", "slabs", "rebate"]) assert.ok(topics.has(topic), `the ${topic} topic is in the corpus`);
 
   // Sections with no safely obtainable official source are listed as gaps, and are genuinely absent.
   const gaps = corpus.knownGaps.map((g) => g.sectionRef).sort();
-  assert.deepEqual(gaps, ["16(ia)", "288A", "288B"]);
+  assert.deepEqual(gaps, ["10(13A)", "112A", "16(ia)", "192", "288A", "288B", "44AD"].sort());
   for (const gap of gaps) assert.equal(covered.has(gap), false, `Section ${gap} is a known gap, so no chunk may claim it`);
   for (const gap of corpus.knownGaps) assert.match(gap.reason, /No official source could be safely obtained/);
 });
@@ -349,4 +352,27 @@ test("the shipped source text is copied from the official page, not composed her
     "Combined deduction limit of ₹ 1,50,000",
     "₹ 25,000 (₹ 50,000 if any person is a Senior Citizen)",
   ]) assert.ok(text.includes(phrase), phrase);
+});
+
+// --- known-gap question phrases (corpus v2) ---------------------------------------------------------------------
+
+test("a known gap may list question phrases: 2 to 6 lower-case words each, nothing else", () => {
+  const withGaps = (knownGaps: unknown[]) => {
+    const { manifest, read } = fixtureCorpusInput({ manifestOverrides: { knownGaps } });
+    return () => buildCorpus(manifest, read);
+  };
+  const ok = withGaps([{ sectionRef: "16(ia)", title: "Standard deduction", reason: "fixture", questionPhrases: ["standard deduction", "tax on capital gains"] }])();
+  assert.deepEqual(ok.knownGaps[0].questionPhrases, ["standard deduction", "tax on capital gains"]);
+  for (const bad of [["Standard deduction"], ["standard"], ["a b c d e f g"], "standard deduction", [1], ["standard  deduction"]]) {
+    assert.throws(withGaps([{ sectionRef: "16(ia)", title: "t", reason: "r", questionPhrases: bad }]), CorpusValidationError, JSON.stringify(bad));
+  }
+  assert.throws(withGaps([{ sectionRef: "16(ia)", title: "t", reason: "r", extra: true }]), CorpusValidationError, "unknown gap keys are refused");
+});
+
+test("an older manifest (gaps without phrases) normalises, and hashes, exactly as before: corpus v1 keeps its recorded hash", () => {
+  const { manifest, read } = fixtureCorpusInput({ manifestOverrides: { knownGaps: [{ sectionRef: "16(ia)", title: "t", reason: "r" }] } });
+  assert.equal("questionPhrases" in buildCorpus(manifest, read).knownGaps[0], false);
+  const v1 = loadCorpusFromDisk(path.resolve(__dirname, "fixtures", "rag-corpus-ay-2026-27-v1"));
+  assert.equal(v1.version, "ay-2026-27-v1");
+  assert.equal(v1.manifestSha256, "ce298ab2a964944472513d527f0a68389e01d67fbdd2d673f3c98451a7f5e547", "the hash corpus v1 was released with");
 });

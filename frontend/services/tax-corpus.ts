@@ -134,7 +134,7 @@ async function run(tx: Tx, corpus: Corpus): Promise<IngestSummary> {
 
   const [created] = await tx
     .insert(taxCorpusReleases)
-    .values({ version: corpus.version, manifestSha256: corpus.manifestSha256 })
+    .values({ version: corpus.version, manifestSha256: corpus.manifestSha256, knownGaps: corpus.knownGaps })
     .onConflictDoNothing({ target: taxCorpusReleases.version })
     .returning({ id: taxCorpusReleases.id });
 

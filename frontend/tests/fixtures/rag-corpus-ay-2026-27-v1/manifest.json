@@ -1,0 +1,220 @@
+{
+  "corpusVersion": "ay-2026-27-v1",
+  "governingAct": "Income-tax Act, 1961",
+  "assessmentYear": "2026-27",
+  "description": "Seed corpus for AY 2026-27 (FY 2025-26): two official Income Tax Department e-Filing portal guidance pages, taken verbatim. Governed by the Income-tax Act, 1961. Guidance only: no statute text is included yet (see knownGaps).",
+  "knownGaps": [
+    {
+      "sectionRef": "16(ia)",
+      "title": "Standard deduction",
+      "reason": "No official source could be safely obtained. Neither portal page mentions it, and the statute repositories (incometaxindia.gov.in, indiacode.nic.in) returned HTTP 403 to automated requests at curation time."
+    },
+    {
+      "sectionRef": "288A",
+      "title": "Rounding of total income",
+      "reason": "No official source could be safely obtained (statute repositories returned HTTP 403 to automated requests at curation time; the portal pages do not cover it)."
+    },
+    {
+      "sectionRef": "288B",
+      "title": "Rounding of tax payable",
+      "reason": "No official source could be safely obtained (statute repositories returned HTTP 403 to automated requests at curation time; the portal pages do not cover it)."
+    }
+  ],
+  "sources": [
+    {
+      "sourceKey": "itd-efiling-salaried-individuals-ay-2026-27",
+      "title": "Salaried Individuals for AY 2026-27",
+      "publisher": "Income Tax Department, Government of India (e-Filing portal)",
+      "url": "https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-1",
+      "authorityTier": "official_guidance",
+      "sourceDate": "2026-07-09",
+      "effectiveFrom": null,
+      "effectiveTo": null,
+      "retrievedAt": "2026-09-19T13:57:24Z",
+      "status": "active",
+      "file": "sources/itd-efiling-salaried-individuals-ay-2026-27.txt",
+      "sha256": "c64242f64b4575b5ee30db7cb6505c9a530cd3f15d844add781d9f3caf3effc2",
+      "notes": "Page states: \"Page Last Reviewed or Updated: 09-Jul-2026\". Overview and general guidance; the page's own disclaimer says it is not exhaustive and refers to the Income Tax Act, 1961, Forms, Rules and Notifications for complete details. Text copied verbatim; only structural headings were added and footnote asterisks removed from the start of three lines.",
+      "sections": [
+        {
+          "heading": "New Tax Regime Vs Old Tax Regime",
+          "sectionRef": "115BAC",
+          "regime": "both",
+          "topics": [
+            "regime",
+            "default-regime"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Non-business case",
+          "sectionRef": "115BAC",
+          "regime": "both",
+          "topics": [
+            "regime",
+            "opt-out"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Business case",
+          "sectionRef": "115BAC",
+          "regime": "both",
+          "topics": [
+            "regime",
+            "opt-out",
+            "business"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Tax rates for individuals below 60 years",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "slabs",
+            "tax-rates"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Tax rates for individuals aged 60 years or more but less than 80 years",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "slabs",
+            "tax-rates",
+            "senior-citizen"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Tax rates for individuals aged 80 years or more",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "slabs",
+            "tax-rates",
+            "super-senior-citizen"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Applicable Surcharge Rates",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "surcharge"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Applicable Rebate u/s 87A",
+          "sectionRef": "87A",
+          "regime": "both",
+          "topics": [
+            "rebate"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Health and Education Cess",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "cess"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Marginal relief from surcharge",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "surcharge",
+            "marginal-relief"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Deductions available under the New Tax Regime (Section 115BAC)",
+          "sectionRef": "115BAC",
+          "regime": "new",
+          "topics": [
+            "deductions",
+            "new-regime"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80C, 80CCC, 80CCD(1) and 80CCD(1B)",
+          "sectionRef": "80C",
+          "regime": "old",
+          "topics": [
+            "deductions"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Section 80D",
+          "sectionRef": "80D",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "health-insurance"
+          ],
+          "verificationStatus": "primary_verified"
+        }
+      ]
+    },
+    {
+      "sourceKey": "itd-efiling-senior-citizens-ay-2026-27",
+      "title": "Senior Citizens and Super Senior Citizens for AY 2026-2027",
+      "publisher": "Income Tax Department, Government of India (e-Filing portal)",
+      "url": "https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-2",
+      "authorityTier": "official_guidance",
+      "sourceDate": "2026-05-29",
+      "effectiveFrom": null,
+      "effectiveTo": null,
+      "retrievedAt": "2026-09-19T13:57:24Z",
+      "status": "active",
+      "file": "sources/itd-efiling-senior-citizens-ay-2026-27.txt",
+      "sha256": "f6def2827e491446d3878149e7a7ba369a8f78eea2fdb803a7ae3281edc68836",
+      "notes": "Page states: \"Page Last Reviewed or Updated: 29-May-2026\". Overview and general guidance, not exhaustive. Only three passages are included: the senior citizen definition and the two Section 80D passages. Text copied verbatim; only structural headings were added.",
+      "sections": [
+        {
+          "heading": "Senior citizen and super senior citizen",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "senior-citizen",
+            "age-category"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Section 80D",
+          "sectionRef": "80D",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "health-insurance",
+            "senior-citizen"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Senior citizens and Section 80D",
+          "sectionRef": "80D",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "health-insurance",
+            "senior-citizen"
+          ],
+          "verificationStatus": "primary_verified"
+        }
+      ]
+    }
+  ]
+}

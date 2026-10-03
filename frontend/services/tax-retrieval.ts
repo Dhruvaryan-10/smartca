@@ -162,6 +162,8 @@ const SECTION_BOOST = 1;
 /** Breaks near-ties in favour of the more authoritative source. */
 const TIER_BONUS: Record<AuthorityTier, number> = { statute: 0.15, notification_circular: 0.08, official_guidance: 0 };
 const MAX_QUOTE_CHARS = 400;
+/** The least room worth filling with part of a line that does not fit whole. */
+const MIN_PARTIAL_QUOTE_CHARS = 80;
 
 type SqlExecutor = Pick<typeof db, "execute">;
 
@@ -188,6 +190,53 @@ const wordWeight = (word: string) => (/^\d+$/.test(word) ? 2 : 1);
  * that shares the most words with it, followed by the lines after it up to a length limit, so a table row
  * keeps its header. Always an exact substring of `text`.
  */
+/**
+ * Common tax abbreviations and the full names the Income Tax Department's pages use for them. A fixed, reviewed list: an
+ * abbreviation in a question adds its full name to what is searched, so a one-word question ("What is AIS?") can meet the
+ * passage that spells it out. It changes the search terms only; evidence is still quoted verbatim from the corpus.
+ */
+export const TAX_ABBREVIATIONS: Readonly<Record<string, string>> = {
+  AIS: "Annual Information Statement",
+  TIS: "Taxpayer Information Summary",
+  TDS: "Tax Deducted at Source",
+  TCS: "Tax Collected at Source",
+  HRA: "House Rent Allowance",
+  ITR: "Income Tax Return",
+  LTCG: "Long-term capital gain",
+  STCG: "Short term capital gain",
+  PPF: "Public Provident Fund",
+  EPF: "Employees Provident Fund",
+  NSC: "National Savings Certificate",
+  ELSS: "Equity Linked Savings Scheme equity shares",
+  NPS: "National Pension System pension scheme of Central Government",
+  LIC: "Life Insurance Corporation",
+  SFT: "Statement of Financial Transaction",
+  HUF: "Hindu Undivided Family",
+};
+
+/** The question followed by the full name of every listed abbreviation it contains as a word (any case, with or without a hyphenated suffix such as ITR-1). */
+export function expandAbbreviations(question: string): string {
+  const found = Object.keys(TAX_ABBREVIATIONS).filter((abbr) => new RegExp(String.raw`(?<![A-Za-z])${abbr}(?![A-Za-z])`, "i").test(question));
+  return found.length === 0 ? question : `${question} ${found.map((abbr) => TAX_ABBREVIATIONS[abbr]).join(" ")}`;
+}
+
+/** Lower-case words separated by single spaces, so phrases compare regardless of case, punctuation and line breaks. */
+export function normalizePhraseText(text: string): string {
+  return ` ${(text.toLowerCase().match(/[\p{L}\p{N}-]+/gu) ?? []).join(" ")} `;
+}
+
+/** The first known-gap question phrase the question contains (as whole words), or null. Malformed gap data counts as none. */
+export function gapPhraseIn(question: string, knownGaps: unknown): string | null {
+  if (!Array.isArray(knownGaps)) return null;
+  const q = normalizePhraseText(question);
+  for (const gap of knownGaps) {
+    const phrases = (gap as { questionPhrases?: unknown })?.questionPhrases;
+    if (!Array.isArray(phrases)) continue;
+    for (const phrase of phrases) if (typeof phrase === "string" && q.includes(` ${phrase} `)) return ` ${phrase} `;
+  }
+  return null;
+}
+
 export function selectQuote(text: string, question: string): string {
   const wanted = new Set(wordsOf(question));
 
@@ -230,7 +279,14 @@ export function selectQuote(text: string, question: string): string {
 
   const start = units[best].start;
   let end = units[best].end;
-  for (let i = best + 1; i < units.length && units[i].end - start <= MAX_QUOTE_CHARS; i++) end = units[i].end;
+  let next = best + 1;
+  for (; next < units.length && units[next].end - start <= MAX_QUOTE_CHARS; next++) end = units[next].end;
+  // A line that does not fit whole is still quoted as far as it fits (to a word boundary): a heading followed by a long table row
+  // ("Section 80C, ..." then "80C | Life Insurance Premium ... ₹ 1,50,000 ...") otherwise quoted only the heading, which says nothing.
+  if (next < units.length && start + MAX_QUOTE_CHARS - end >= MIN_PARTIAL_QUOTE_CHARS) {
+    const cut = text.lastIndexOf(" ", start + MAX_QUOTE_CHARS);
+    if (cut > units[next].start) end = cut;
+  }
   if (end - start > MAX_QUOTE_CHARS) {
     const cut = text.lastIndexOf(" ", start + MAX_QUOTE_CHARS);
     end = cut > start ? cut : start + MAX_QUOTE_CHARS;
@@ -242,7 +298,7 @@ export function selectQuote(text: string, question: string): string {
 // Retrieval
 // ---------------------------------------------------------------------
 
-type ContextRow = { version: string | null; has_year: boolean; years: string[]; tiers: string[]; section_refs: string[]; lexemes: string[] };
+type ContextRow = { version: string | null; known_gaps: unknown; has_year: boolean; years: string[]; tiers: string[]; section_refs: string[]; lexemes: string[] };
 type MentionRow = { chunk_id: string; text: string };
 type CandidateRow = {
   chunk_id: string;
@@ -289,6 +345,8 @@ function readInput(input: TaxRetrievalInput): { question: string; assessmentYear
  */
 export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExecutor = db): Promise<TaxRetrievalResult> {
   const { question, assessmentYear, sectionRefs, statedYears, requiredTiers } = readInput(input);
+  // What is searched: the question, with the official name of each abbreviation it uses ("What is AIS?" has one term otherwise).
+  const searchText = expandAbbreviations(question);
   const insufficient = (
     reason: InsufficientReason,
     corpusVersion: string | null,
@@ -308,6 +366,7 @@ export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExec
       await executor.execute<ContextRow>(sql`
         SELECT
           (SELECT version FROM tax_corpus_releases ORDER BY created_at DESC, id DESC LIMIT 1) AS version,
+          (SELECT known_gaps FROM tax_corpus_releases ORDER BY created_at DESC, id DESC LIMIT 1) AS known_gaps,
           EXISTS (SELECT 1 FROM tax_sources WHERE status = 'active' AND assessment_year = ${assessmentYear}) AS has_year,
           ARRAY(SELECT DISTINCT assessment_year FROM tax_sources WHERE status = 'active') AS years,
           ARRAY(SELECT DISTINCT authority_tier::text FROM tax_sources WHERE status = 'active' AND assessment_year = ${assessmentYear}) AS tiers,
@@ -315,7 +374,7 @@ export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExec
             SELECT DISTINCT c.section_ref FROM tax_source_chunks c JOIN tax_sources s ON s.id = c.source_id
             WHERE s.status = 'active' AND s.assessment_year = ${assessmentYear} AND c.section_ref IS NOT NULL
           ) AS section_refs,
-          ARRAY(SELECT lexeme FROM unnest(to_tsvector('english', ${question}::text))) AS lexemes
+          ARRAY(SELECT lexeme FROM unnest(to_tsvector('english', ${searchText}::text))) AS lexemes
       `)
     ).rows[0];
 
@@ -373,7 +432,7 @@ export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExec
     // 2. Candidate passages: only active sources, only this assessment year.
     const candidates = (
       await executor.execute<CandidateRow>(sql`
-        WITH q AS (SELECT replace(plainto_tsquery('english', ${question}::text)::text, ' & ', ' | ')::tsquery AS orq)
+        WITH q AS (SELECT replace(plainto_tsquery('english', ${searchText}::text)::text, ' & ', ' | ')::tsquery AS orq)
         SELECT
           c.id AS chunk_id, c.chunk_index, c.section_ref, c."text" AS text, c.verification_status,
           s.source_key, s.title, s.publisher, s.url, s.authority_tier, s.assessment_year,
@@ -413,12 +472,16 @@ export async function retrieveTaxLaw(input: TaxRetrievalInput, executor: SqlExec
       .slice(0, MAX_EVIDENCE);
 
     if (scored.length === 0) return insufficient("no_matching_passages", corpusVersion);
+    // A question ABOUT a provision the corpus says it does not cover (a known gap's question phrase) is not answered with
+    // passages that merely share its generic words: one of them must contain the phrase itself.
+    const gap = gapPhraseIn(question, context.known_gaps);
+    if (gap !== null && !scored.some(({ row }) => normalizePhraseText(row.text).includes(gap))) return insufficient("no_matching_passages", corpusVersion);
 
     const evidence: TaxEvidence[] = scored.map(({ row, score }) => {
       // A passage found because it names a section is quoted around that mention as well as around the question's
       // words, so a generic question ("limit") does not quote another section's figure from the same passage.
       const cited = resolved.filter((r) => r.citingChunkIds.includes(row.chunk_id)).map((r) => r.requested);
-      const quote = selectQuote(row.text, [question, ...cited].join(" "));
+      const quote = selectQuote(row.text, [searchText, ...cited].join(" "));
       // The contract, checked at the source: a quote is never anything but a slice of the stored passage.
       if (!row.text.includes(quote)) throw new Error("A selected quote was not part of its passage.");
       return {

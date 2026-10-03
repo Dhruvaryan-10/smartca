@@ -12,9 +12,12 @@
 //   - nothing resolves by numeric coincidence, from a sibling clause, from another year, or from an inactive source;
 //   - the sections that were already supported behave as before.
 //
-// DB-backed tests run in a transaction that is always rolled back, on the shipped corpus. This is a regression
+// DB-backed tests run in a transaction that is always rolled back, on corpus v1 (an exact copy kept as a fixture,
+// tests/fixtures/rag-corpus-ay-2026-27-v1): corpus v2 gives several of these sections passages of their own, so the
+// shipped corpus no longer exercises the cited-in-passage path. The last tests check corpus v2 itself. This is a regression
 // suite, not an accuracy measurement.
 import "../db/load-env";
+import path from "node:path";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { eq } from "drizzle-orm";
@@ -30,7 +33,15 @@ import type { Tx } from "./helpers-rag";
 const AY = "2026-27";
 const SALARIED = "itd-efiling-salaried-individuals-ay-2026-27";
 
+const CORPUS_V1 = path.resolve(__dirname, "fixtures", "rag-corpus-ay-2026-27-v1");
+/** Corpus v1, the shape these tests were written for (see the header). */
 const withShippedCorpus = <T>(work: (tx: Tx) => Promise<T>) =>
+  inRolledBackTransaction(async (tx) => {
+    await ingestTaxCorpus(loadCorpusFromDisk(CORPUS_V1), tx);
+    return work(tx);
+  });
+/** The corpus as shipped today (v2). */
+const withCurrentCorpus = <T>(work: (tx: Tx) => Promise<T>) =>
   inRolledBackTransaction(async (tx) => {
     await ingestTaxCorpus(loadCorpusFromDisk(), tx);
     return work(tx);
@@ -378,3 +389,26 @@ test("a bare number in a passage is a section only where the passage visibly cit
     }
   });
 });
+
+// --- corpus v2: sections that are now indexed in their own passages --------------------------------------------
+
+for (const [question, requested, quoteIncludes] of [
+  ["What is the deduction limit under Section 80CCD(1B)?", "80CCD(1b)", "50,000"],
+  ["What is the limit on employer contributions under Section 80CCD(2)?", "80CCD(2)", "of salary"],
+  ["What does section 24(b) allow on a housing loan?", "24(b)", "24(b)"],
+  ["What does section 80E cover?", "80E", "higher education"],
+  ["What does section 80TTA allow?", "80TTA", "10,000"],
+] as const) {
+  test(`corpus v2: ${requested} is indexed in a passage of its own, which ranks first and quotes the provision`, async () => {
+    await withCurrentCorpus(async (tx) => {
+      const result = ok(await retrieveTaxLaw({ question, assessmentYear: AY }, tx));
+      assert.equal(result.corpusVersion, "ay-2026-27-v2");
+      assert.deepEqual(result.unmatchedSectionRefs, []);
+      const { resolution } = resolutionFor(result, requested);
+      assert.equal(resolution.basis, "indexed");
+      assert.equal(result.evidence[0].sectionRef, requested, "the provision's own passage ranks first");
+      assert.ok(result.evidence[0].quote.includes(quoteIncludes), result.evidence[0].quote);
+      assert.equal(result.evidence[0].authorityTier, "official_guidance");
+    });
+  });
+}

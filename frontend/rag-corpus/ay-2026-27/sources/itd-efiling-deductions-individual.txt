@@ -1,0 +1,39 @@
+# Deductions on which I can get tax benefit (Individual)
+
+## Section 80C, 80CCC and 80CCD(1): what each covers
+Section | Deduction | Description
+
+80C | Deduction in respect of life insurance premia, deferred annuity, contributions to provident fund, subscription to certain equity shares or debentures, etc.
+Amount paid or deposited towards life insurance premium, contribution to any Provident Fund set up by the Government, employees contribution to a recognised Provident Fund or an approved superannuation fund, contribution to deferred annuity plan, subscription to National Savings Certificates, tuition fees, payment or repayment of amounts borrowed for purposes of purchase/ construction of a residential house, and other similar payments/investments which are eligible for deduction under section 80C of the Income Tax Act.
+
+The deduction claimed under this section cannot exceed ₹1,50,000/-
+
+80CCC
+Deduction in respect of contribution to certain Pension Fund
+
+Amount paid towards any annuity plan of LIC or any other insurer for receiving pension from the pension fund, which is eligible for deduction u/s 80CCC.
+
+The deduction claimed under this section cannot exceed ₹1,50,000/-
+
+80CCD (1)
+Deduction in respect of contribution to pension scheme of Central Government
+
+Total amount paid or deposited during the year, in your account under a pension scheme notified by the Central Government which is eligible for deduction under sub-section (1) of section 80CCD.
+
+The deduction claimed under this section cannot exceed ₹1,50,000/-
+
+Note for 80C, 80CCC and 80CCD (1):
+
+The aggregate deduction u/s 80C, 80CCC and 80CCD (1) cannot be more than ₹1,50,000/- or the gross total income, whichever is less.
+
+## Section 80CCD(1B): what it covers
+80CCD(1B)
+Contribution to pension scheme of Central Government
+
+Amount paid during the year in your account under a Central Government pension scheme eligible for deduction under sub-section (1B) of section 80CCD.
+
+Note:
+
+- The amount eligible under this sub-section is subject to a maximum limit of ₹ 50,000/-
+
+- Further condition: No claim should have been made under sub-section (1) in respect of the same amount.

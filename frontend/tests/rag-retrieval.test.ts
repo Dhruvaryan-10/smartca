@@ -20,7 +20,7 @@ import { taxCorpusReleases, taxSourceChunks, taxSources } from "../db/schema";
 import { loadCorpusFromDisk, DEFAULT_CORPUS_DIR } from "../lib/rag/load-corpus";
 import { ValidationError } from "../services/errors";
 import { ingestTaxCorpus } from "../services/tax-corpus";
-import { MAX_EVIDENCE, MAX_QUESTION_LENGTH, retrieveTaxLaw, selectQuote } from "../services/tax-retrieval";
+import { MAX_EVIDENCE, MAX_QUESTION_LENGTH, expandAbbreviations, gapPhraseIn, retrieveTaxLaw, selectQuote } from "../services/tax-retrieval";
 import type { TaxRetrievalResult } from "../services/tax-retrieval";
 import { inRolledBackTransaction, insertFixtureSource } from "./helpers-rag";
 import type { Tx } from "./helpers-rag";
@@ -376,5 +376,61 @@ test("the corpus is unchanged by retrieval", async () => {
     const before = await count();
     for (const c of RETRIEVAL_CASES) await retrieveTaxLaw({ question: c.question, assessmentYear: c.assessmentYear ?? AY }, tx);
     assert.deepEqual(await count(), before);
+  });
+});
+
+test("a heading followed by a long table row is quoted with as much of the row as fits, never the heading alone", () => {
+  // Regression: "What can I claim under Section 80C?" quoted only "Section 80C, 80CCC, 80CCD (1)\nDeduction towards payments made
+  // to", because the 80C row did not fit whole after the heading. The model then filled the gap from memory and was withheld.
+  const passage = [
+    "Section 80C, 80CCC, 80CCD (1)",
+    "Deduction towards payments made to",
+    "80C | Life Insurance Premium Provident Fund Subscription to certain equity shares Tuition Fees National Savings Certificate Housing Loan Principal Other various items | Combined deduction limit of ₹ 1,50,000 Details to be filled in ITR for each eligible payment: Policy number or document identification number Amount eligible for deduction u/s 80C",
+    "80CCC | Annuity plan of LIC or another insurer towards Pension Scheme",
+  ].join("\n");
+  const quote = selectQuote(passage, "What can I claim under Section 80C? 80C");
+  assert.ok(passage.includes(quote), "still an exact slice");
+  assert.ok(quote.length <= 400);
+  assert.ok(quote.startsWith("Section 80C, 80CCC, 80CCD (1)"));
+  assert.match(quote, /Life Insurance Premium/);
+  assert.match(quote, /Combined deduction limit of ₹ 1,50,000/);
+  assert.doesNotMatch(quote, /\s$/, "cut at a word boundary, no trailing space");
+});
+
+test("a partial line is added only when there is real room left: a nearly full quote is not padded with a fragment", () => {
+  const first = `${"a".repeat(10)} ${"b".repeat(320)}`; // 331 characters
+  const passage = `${first}\n${"c".repeat(30)} ${"d".repeat(60)} ${"e".repeat(60)}`;
+  assert.equal(selectQuote(passage, "aaaaaaaaaa"), first, "under 80 characters of room: the first line alone");
+});
+
+// --- abbreviations and known-gap phrases (corpus v2) ------------------------------------------------------------
+
+test("an abbreviation adds its official full name to what is searched, as a whole word only", () => {
+  assert.equal(expandAbbreviations("What is AIS?"), "What is AIS? Annual Information Statement");
+  assert.equal(expandAbbreviations("what is tds"), "what is tds Tax Deducted at Source");
+  assert.match(expandAbbreviations("Who can file ITR-1?"), /Income Tax Return$/, "a hyphenated form still counts");
+  assert.equal(expandAbbreviations("Explain statistics and this"), "Explain statistics and this", "no match inside a word ('tis', 'ais')");
+  assert.equal(expandAbbreviations("What is Section 80C?"), "What is Section 80C?");
+});
+
+test("a known-gap phrase is found as whole words in any case or punctuation, and malformed gap data counts as none", () => {
+  const gaps = [{ sectionRef: "16(ia)", questionPhrases: ["standard deduction"] }, { sectionRef: "x", questionPhrases: ["tax on capital gains"] }];
+  assert.equal(gapPhraseIn("How much is the Standard  Deduction?", gaps), " standard deduction ");
+  assert.equal(gapPhraseIn("What is the tax on capital gains from shares?", gaps), " tax on capital gains ");
+  assert.equal(gapPhraseIn("What is a non-standard deduction?", gaps), null, "a hyphenated neighbour is not the phrase");
+  assert.equal(gapPhraseIn("What is Section 80C?", gaps), null);
+  for (const bad of [null, "x", [{}], [{ questionPhrases: "standard deduction" }], [{ questionPhrases: [1] }]]) assert.equal(gapPhraseIn("standard deduction", bad), null);
+});
+
+test("a question about a known gap is not answered with passages that only share its generic words", async () => {
+  await inRolledBackTransaction(async (tx) => {
+    await tx.insert(taxCorpusReleases).values({ version: "fixture-gap-release", manifestSha256: "f".repeat(64), knownGaps: [{ sectionRef: "99Z", title: "Zorblax", reason: "fixture", questionPhrases: ["zorblax quindle"] }] });
+    await insertFixtureSource(tx, { sourceKey: "fixture-gap-generic", chunks: [{ text: "Zorblax rules for the flumbrick quindles of a fixture." }] });
+    const gapQuestion = insufficient(await retrieveTaxLaw({ question: "How does the zorblax quindle work for a flumbrick?", assessmentYear: AY }, tx));
+    assert.equal(gapQuestion.reason, "no_matching_passages", "shared words ('zorblax', 'flumbrick') do not cover the gap");
+
+    await insertFixtureSource(tx, { sourceKey: "fixture-gap-covered", chunks: [{ text: "The zorblax quindle for a flumbrick is set out here." }] });
+    const covered = ok(await retrieveTaxLaw({ question: "How does the zorblax quindle work for a flumbrick?", assessmentYear: AY }, tx));
+    assert.ok(covered.evidence.some((e) => e.sourceKey === "fixture-gap-covered"), "a passage that contains the phrase answers it");
   });
 });

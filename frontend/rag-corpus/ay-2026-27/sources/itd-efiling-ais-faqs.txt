@@ -1,0 +1,82 @@
+# FAQs on AIS (Annual Information Statement)
+
+## What is the Annual Information Statement (AIS)
+Q-1 What is Annual Information Statement (AIS)?
+
+Annual Information Statement (AIS) is comprehensive view of information for a taxpayer.
+
+The objectives of AIS are:
+
+• Displays complete information to the taxpayer before filing the return of income with a facility to capture online feedback
+
+• Promotes voluntary compliance and enable seamless prefilling of return
+
+• Deters non-compliance
+
+For more information, navigate to AIS under e-File/AIS menu after login.
+
+## Components of the AIS
+Q-2 What are the components of Annual Information Statement (AIS)?
+
+The information shown on AIS is divided in two parts:
+
+PART A- General Information
+
+Part A displays general information pertaining to you, including PAN, Masked Aadhar Number, Name of the Taxpayer, Date of Birth/ Incorporation/ Formation, mobile number, e-mail address and address of Taxpayer.
+
+PART B - TDS/TCS Information
+
+Information related to tax deducted/collected at source is displayed here. The Information code of the TDS/TCS, Information description and Information value is shown.
+
+• SFT Information: Under this head, information received from reporting entities under Statement of Financial transaction (SFT) is displayed. The SFT code, Information description and Information value is made available.
+
+• Payment of Taxes: Information relating to payment of taxes during the Financial Year under different heads, such as Advance Tax and Self-Assessment Tax is shown.
+
+• Demand and Refund: You will be able to view the details of the demand raised and refund initiated (AY and amount) during a financial year. (Details related to Demand are not available currently).
+
+• Other Information: Details of the information received from the other sources, such as data pertaining to Annexure II salary, Interest on refund, Outward Foreign Remittance/Purchase of Foreign Currency etc. is displayed here.
+
+Further, Taxpayer can provide feedback on information displayed in AIS. AIS shows both reported value and modified value (i.e. value after considering taxpayer feedback or source confirmation on taxpayer’s feedback) under each section (i.e. TDS, SFT, Other information).
+
+For more information, navigate to AIS under e-File/AIS menu after login.
+
+## Is all information in the AIS
+Q-3 Are all information of a taxpayer available in AIS for filing return of income?
+
+Annual Information Statement (AIS) includes information presently available with Income Tax Department. There may be other transactions relating to the taxpayer which are not presently displayed in Annual Information Statement (AIS). Taxpayer is expected to check all related information and report complete and accurate information in the Income Tax Return.
+
+## Taxpayer Information Summary (TIS)
+Q-5 What does Taxpayer Information Summary (TIS) contain under AIS?
+
+Taxpayer Information Summary (TIS) is an information category wise aggregated information summary for a taxpayer. It shows value processed by system (i.e. value generated after deduplication of information based on pre-defined rules) and value accepted by taxpayer/confirmed by source (i.e. value derived by taxpayer after considering the taxpayer feedback or source confirmation on taxpayer’s feedback and value processed by system) under each information category (e.g. Salary, Interest, Dividend etc.). The information accepted by taxpayer/confirmed by source in TIS will be used for pre-filling of return, if applicable.
+
+You will be shown various details within the Taxpayer Information Summary such as,
+
+• Information Category
+
+• Value processed by system
+
+• Value accepted by taxpayer/confirmed by source
+
+Further, within an Information Category, following information is shown:
+
+• Part through which information received
+
+• Information Description
+
+• Information Source
+
+• Amount Description
+
+• Amount (Reported by Source, Processed by System, Accepted by Taxpayer/Confirmed by Source)
+
+For more information, navigate to AIS under e-File/AIS menu after login.
+
+## Difference between AIS and Form 26AS
+Q-6 What is the difference between AIS and Form 26AS (Annual Tax Statement)?
+
+From AY 2023-24 onwards, Annual Tax Statement (Form 26AS) available on TRACES portal displays only TDS/TCS related data of the taxpayer. Other details pertaining to the taxpayer are available in the AIS (Annual Information Statement).
+
+AIS also provides the taxpayer the option to give feedback on the transactions reported. Further, the aggregation of transactions on information source level is also reported in TIS contained under AIS.
+
+For more information, navigate to AIS under e-File/AIS menu after login.

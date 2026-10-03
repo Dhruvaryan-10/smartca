@@ -438,6 +438,9 @@ export const taxCorpusReleases = pgTable("tax_corpus_releases", {
   version: text("version").notNull(),
   // Hash over the canonical manifest and every source's content hash.
   manifestSha256: text("manifest_sha256").notNull(),
+  // The manifest's known gaps, as released: what the corpus says it does NOT cover, and the question phrases that mean a
+  // question is about such a gap (retrieval reads them; lib/rag/corpus.ts validates them). Reference data, no user content.
+  knownGaps: jsonb("known_gaps").notNull().default(sql`'[]'::jsonb`),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   uniqueIndex("tax_corpus_releases_version_unique").on(table.version),

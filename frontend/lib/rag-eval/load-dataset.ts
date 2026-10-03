@@ -5,7 +5,7 @@ import path from "node:path";
 import { EvalDatasetError, parseEvalDataset, verifyTestFreeze } from "./dataset";
 import type { EvalDataset, RawEvalDataset } from "./dataset";
 
-export const DEFAULT_EVAL_DIR = path.resolve(__dirname, "..", "..", "rag-evals", "ay-2026-27-v1");
+export const DEFAULT_EVAL_DIR = path.resolve(__dirname, "..", "..", "rag-evals", "ay-2026-27-v2");
 
 const readJson = (directory: string, file: string): unknown => JSON.parse(fs.readFileSync(path.join(directory, file), "utf8").replace(/^﻿/, ""));
 
