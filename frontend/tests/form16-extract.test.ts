@@ -354,3 +354,39 @@ test("a narrow whitespace item is just a word space, not a cell boundary", () =>
   };
   assert.equal(field(extractForm16Fields([p]), "employerName").value, "ACME WORKS LIMITED");
 });
+
+test("the prescribed TRACES Part A layout: the employer is read from the row below, not the '/Specified Bank' label suffix", () => {
+  // Regression: "Name and address of the Employer/Specified Bank" left "/Specified Bank" after the label, and it was read as
+  // the employer's name. The assessment year sits in the row below its header here, so it stays missing (the person enters it).
+  const tracesPartA: Array<Array<[number, string]>> = [
+    [[230, "FORM NO. 16"]],
+    [[260, "PART A"]],
+    [[40, "Certificate under section 203 of the Income-tax Act, 1961 for tax deducted at source on salary paid to an employee"]],
+    [[40, "Name and address of the Employer/Specified Bank"], [320, "Name and address of the Employee/Specified senior citizen"]],
+    [[40, "ACME SOFTWARE PRIVATE LIMITED"], [320, "ASHA RAO"]],
+    [[40, "12 MG ROAD, BENGALURU - 560001"], [320, "45 LAKE VIEW, BENGALURU - 560034"]],
+    [[40, "PAN of the Deductor"], [160, "TAN of the Deductor"], [300, "PAN of the Employee/Specified senior citizen"]],
+    [[40, "AAACA1234Z"], [160, "BLRA12345B"], [300, "ABCPR1234L"]],
+    [[40, "CIT (TDS)"], [260, "Assessment Year"], [380, "Period with the Employer"]],
+    [[40, "The Commissioner of Income Tax (TDS)"], [260, "2026-27"], [380, "01-Apr-2025"], [460, "31-Mar-2026"]],
+  ];
+  const traces = extractForm16Fields([page(1, tracesPartA), page(2, PART_B)]);
+  const employer = field(traces, "employerName");
+  assert.equal(employer.status, "found");
+  assert.equal(employer.value, "ACME SOFTWARE PRIVATE LIMITED");
+  assert.equal(field(traces, "assessmentYear").status, "missing");
+
+  // Every Part B field reads exactly as it does from the original layout (the Part A fields differ by design: this layout has
+  // no TDS summary row).
+  const original = extractForm16Fields(FULL);
+  for (const f of original.fields) {
+    if (f.key === "employerName" || f.key === "assessmentYear" || f.key === "tdsDeducted") continue;
+    const t = field(traces, f.key);
+    assert.equal(t.status, f.status, f.key);
+    assert.equal(t.valuePaise, f.valuePaise, f.key);
+  }
+});
+
+test("the plain 'Employer' label is still read as before", () => {
+  assert.equal(field(extractForm16Fields(FULL), "employerName").value, "ACME SOFTWARE PRIVATE LIMITED");
+});

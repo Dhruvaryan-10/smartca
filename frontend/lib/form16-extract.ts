@@ -20,7 +20,7 @@
 import { parseRupeesToPaise } from "./money-input";
 import type { PdfPage, PositionedItem } from "./pdf-text";
 
-export const FORM16_EXTRACTOR_VERSION = "form16-text-v1";
+export const FORM16_EXTRACTOR_VERSION = "form16-text-v2";
 
 export type Form16FieldKey =
   | "assessmentYear"
@@ -374,7 +374,9 @@ function assessmentYearField(lines: Line[]): Form16Field {
   return resolve(base, candidates, (c) => c.value ?? "");
 }
 
-const EMPLOYER_LABEL = /name and address of the employer/i;
+// The prescribed (TRACES) Form 16 labels the column "Name and address of the Employer/Specified Bank"; the suffix is part of the
+// label, not the start of a name.
+const EMPLOYER_LABEL = /name and address of the employer(?:\s*\/\s*specified bank)?/i;
 const EMPLOYEE_LABEL = /name and address of the employee.*$/i;
 const LABEL_WORDS = /name and address|employer|employee|\bpan\b|\btan\b|deductor|deductee/i;
 const PAN_LIKE = /^[A-Z]{5}\d{4}[A-Z]$/;
