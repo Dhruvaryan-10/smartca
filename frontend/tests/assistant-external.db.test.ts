@@ -27,6 +27,7 @@ import { createTransaction } from "../services/transactions";
 import { deleteTestUser, makeTestUser } from "./helpers";
 import { testProvider, toolMessagesSent } from "./helpers-provider";
 import type { WireStep } from "./helpers-provider";
+import { presentForModel } from "../lib/assistant/model-view";
 
 const USER = "0b6f5a2e-1c3d-4e5f-8a9b-0c1d2e3f4a5b";
 const RECIPIENT = "recipient-a";
@@ -89,7 +90,7 @@ test("an authorized request reaches the configured provider, offered the full pr
   const visible = Object.fromEntries(EGRESS_FIELD_CLASSES.map((c) => [c, plan.visibleClasses.includes(c)])) as never;
   assert.deepEqual(
     toolMessagesSent([calls[2]]).map((m) => m.content),
-    raw.map(([tool, result]) => JSON.stringify(filterToolResult(tool, result, visible))),
+    raw.map(([tool, result]) => JSON.stringify(presentForModel(filterToolResult(tool, result, visible)))),
     "the provider is sent exactly the egress filter's view of each real result",
   );
   assert.equal(answer.facts.taxValues.length, 3);
@@ -110,7 +111,7 @@ test("the provider sees the filtered representation, never the raw ledger rows: 
     const wire = calls.map((c) => `${c.url}\n${JSON.stringify(c.headers)}\n${c.body}`).join("\n");
     const bodies = calls.map((c) => c.body).join("\n");
     assert.match(bodies, /Groceries/, "authorized ledger fields do cross");
-    assert.match(bodies, /45000/);
+    assert.match(bodies, /₹450(?![\d,.])/, "the amount crosses, written in rupees (45000 paise)");
     assert.equal(bodies.includes(marker), false, "descriptions were not asked for, so none crossed");
     assert.equal(bodies.includes(user.id), false, "the user id never reaches the provider");
     for (const secret of [process.env.DATABASE_URL, process.env.AUTH_SECRET, KEY].filter((s): s is string => typeof s === "string" && s.length > 0)) {

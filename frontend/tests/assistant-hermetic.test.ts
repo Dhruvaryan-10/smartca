@@ -70,6 +70,8 @@ const PURE_TESTS = [
   "tests/assistant-consent.test.ts",
   "tests/assistant-provider-registry.test.ts",
   "tests/assistant-preflight.test.ts",
+  "tests/assistant-local-config.test.ts",
+  "tests/assistant-model-view.test.ts",
 ];
 const PURE_HELPERS = ["tests/helpers-answer.ts", "tests/helpers-errors.ts", "tests/helpers-orchestrator.ts", "tests/helpers-provider.ts", "tests/helpers-limiter.ts"];
 

@@ -2,8 +2,8 @@
 // imports it (a test pins that), no variable is NEXT_PUBLIC_, and it prints nothing.
 //
 //   ASSISTANT_ENABLED=false          off unless exactly "true"
-//   ASSISTANT_ENV=synthetic          the only valid value today; ANY other, a real-data mode included, fails closed
-//   MODEL_ENDPOINT=                  an https address, with no credentials in it
+//   ASSISTANT_ENV=synthetic          or "local" (below); ANY other value, "external" included, fails closed
+//   MODEL_ENDPOINT=                  an https address, with no credentials in it (local mode: a loopback address, see below)
 //   MODEL_API_KEY=                   the secret; held in a wrapper that cannot be printed or serialised by accident
 //   MODEL_ID=                        the model identifier
 //   MODEL_APPROVED_RECIPIENTS=       comma-separated recipient ids allowed to answer; anything else fails closed
@@ -23,6 +23,12 @@
 // and exactly one approved recipient. readAssistantConfig still REFUSES external mode (ADR 0002: until a provider is assessed and
 // the consent mechanics are decided), so validateExternalEnv is reachable only from tests; enabling external mode is a reviewed
 // change to readAssistantConfig, not a new code path.
+//
+// A LOCAL configuration (validateLocalEnv, ASSISTANT_ENV=local, docs/decisions/0005) is the external configuration in every respect
+// (every variable above, exactly one recipient, every limit, the same provider path, consent, tools and egress filter) except the
+// endpoint, which must be a LOOPBACK address: http or https, host exactly 127.0.0.1 or [::1] (an IP literal, so no name lookup can
+// point it elsewhere), no credentials. The driver follows no redirects, so a local configuration cannot send anything off this
+// machine. It is for a model served on the same host (development); it is not a way to reach a hosted provider.
 //
 // When enabled, EVERY one of them is required and validated, so the path a real deployment will use is exercised even by the
 // synthetic transport. The synthetic transport never contacts the endpoint and never uses the key for anything: put a
@@ -137,8 +143,13 @@ type ModelSettings = {
   maxOutputChars: number;
 };
 export type SyntheticAssistantConfig = ModelSettings & { env: "synthetic" };
-export type ExternalAssistantConfig = ModelSettings & { env: "external"; maxOutputTokens: number; wireFormat: ModelWireFormat; limits: AssistantRunLimits; runRetentionDays: number };
-export type AssistantConfig = { enabled: false } | SyntheticAssistantConfig | ExternalAssistantConfig;
+type ProviderSettings = ModelSettings & { maxOutputTokens: number; wireFormat: ModelWireFormat; limits: AssistantRunLimits; runRetentionDays: number };
+export type ExternalAssistantConfig = ProviderSettings & { env: "external" };
+/** A model on this machine (docs/decisions/0005): the external configuration with a loopback endpoint. */
+export type LocalAssistantConfig = ProviderSettings & { env: "local" };
+/** Every configuration that calls a real model through the provider path. */
+export type ProviderAssistantConfig = ExternalAssistantConfig | LocalAssistantConfig;
+export type AssistantConfig = { enabled: false } | SyntheticAssistantConfig | ProviderAssistantConfig;
 
 const KEY_SHAPE = /^[\x21-\x7e]{1,512}$/;
 const MODEL_ID_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
@@ -149,6 +160,19 @@ function endpointOf(value: string): string | null {
   try {
     const url = new URL(value);
     return url.protocol === "https:" && url.hostname !== "" && url.username === "" && url.password === "" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Hosts a local configuration may use: loopback IP literals only (URL keeps IPv6 in brackets). Not "localhost": a name can be re-pointed. */
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]"]);
+
+function loopbackEndpointOf(value: string): string | null {
+  try {
+    const url = new URL(value);
+    const scheme = url.protocol === "http:" || url.protocol === "https:";
+    return scheme && LOOPBACK_HOSTS.has(url.hostname) && url.username === "" && url.password === "" ? url.href : null;
   } catch {
     return null;
   }
@@ -188,6 +212,8 @@ export function readAssistantConfig(env: Readonly<Record<string, string | undefi
   if (enabled !== "true") throw new AssistantConfigError("invalid_configuration", ["ASSISTANT_ENABLED"]);
 
   const mode = env.ASSISTANT_ENV;
+  // A model on this machine (docs/decisions/0005). Validated exactly as an external configuration, with a loopback endpoint.
+  if (mode === "local") return validateLocalEnv(env);
   if (mode !== undefined && mode !== "" && mode !== "synthetic") throw new AssistantConfigError("real_data_mode_not_permitted", ["ASSISTANT_ENV"]);
 
   return Object.freeze({ env: "synthetic" as const, ...readModelSettings(env) });
@@ -199,12 +225,12 @@ const valueIn = (env: Readonly<Record<string, string | undefined>>) => (name: As
 };
 
 /** The model settings every enabled mode needs, all required and validated. Errors name variables, never values. */
-function readModelSettings(env: Readonly<Record<string, string | undefined>>): ModelSettings {
+function readModelSettings(env: Readonly<Record<string, string | undefined>>, endpointRule: (value: string) => string | null = endpointOf): ModelSettings {
   const value = valueIn(env);
   const missing = ASSISTANT_ENV_NAMES.filter((name) => name !== "ASSISTANT_ENABLED" && value(name) === undefined);
   if (missing.length > 0) throw new AssistantConfigError("missing_configuration", missing);
 
-  const endpoint = endpointOf(value("MODEL_ENDPOINT") as string);
+  const endpoint = endpointRule(value("MODEL_ENDPOINT") as string);
   const apiKey = KEY_SHAPE.test(value("MODEL_API_KEY") as string) ? (value("MODEL_API_KEY") as string) : null;
   const modelId = MODEL_ID_SHAPE.test(value("MODEL_ID") as string) ? (value("MODEL_ID") as string) : null;
   const approvedRecipients = recipientsOf(value("MODEL_APPROVED_RECIPIENTS") as string);
@@ -251,9 +277,24 @@ export function readRunRetentionDays(env: Readonly<Record<string, string | undef
 export function validateExternalEnv(env: Readonly<Record<string, string | undefined>>): ExternalAssistantConfig {
   if (env.ASSISTANT_ENABLED !== "true") throw new AssistantConfigError("assistant_disabled");
   if (env.ASSISTANT_ENV !== "external") throw new AssistantConfigError("invalid_configuration", ["ASSISTANT_ENV"]);
+  return Object.freeze({ ...readProviderSettings(env, endpointOf), env: "external" as const });
+}
+
+/**
+ * Validates a LOCAL configuration (docs/decisions/0005): everything validateExternalEnv requires, with the endpoint restricted to a
+ * loopback address (loopbackEndpointOf) instead of https. Reached through readAssistantConfig when ASSISTANT_ENV=local.
+ */
+export function validateLocalEnv(env: Readonly<Record<string, string | undefined>>): LocalAssistantConfig {
+  if (env.ASSISTANT_ENABLED !== "true") throw new AssistantConfigError("assistant_disabled");
+  if (env.ASSISTANT_ENV !== "local") throw new AssistantConfigError("invalid_configuration", ["ASSISTANT_ENV"]);
+  return Object.freeze({ ...readProviderSettings(env, loopbackEndpointOf), env: "local" as const });
+}
+
+/** The settings every provider configuration needs (external and local alike); only the endpoint rule differs. */
+function readProviderSettings(env: Readonly<Record<string, string | undefined>>, endpointRule: (value: string) => string | null): ProviderSettings {
   const value = valueIn(env);
   const missingLimits = [...ASSISTANT_PROVIDER_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES].filter((name) => value(name) === undefined);
-  const settings = readModelSettings(env);
+  const settings = readModelSettings(env, endpointRule);
   if (missingLimits.length > 0) throw new AssistantConfigError("missing_configuration", missingLimits);
   if (settings.approvedRecipients.length !== 1) throw new AssistantConfigError("invalid_configuration", ["MODEL_APPROVED_RECIPIENTS"]);
   const limits = {
@@ -284,14 +325,13 @@ export function validateExternalEnv(env: Readonly<Record<string, string | undefi
     invalid.push("ASSISTANT_RUN_RETENTION_DAYS");
   }
   if (invalid.length > 0) throw new AssistantConfigError("invalid_configuration", invalid);
-  return Object.freeze({
+  return {
     ...settings,
-    env: "external" as const,
     maxOutputTokens: maxOutputTokens as number,
     wireFormat: wireFormat as ModelWireFormat,
     limits: Object.freeze(limits as { [K in keyof AssistantRunLimits]: number }),
     runRetentionDays: runRetentionDays as number,
-  });
+  };
 }
 
 /** The model limits a configuration implies: the per-call timeout, a total run budget of that times the model rounds, the output size and the recipients. */

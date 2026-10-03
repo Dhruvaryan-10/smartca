@@ -96,6 +96,8 @@ function decodeCall(value: unknown): ModelToolCall {
   return { id: value.id, name, arguments: parseToolArguments(args) };
 }
 
+const TOOL_CALL_MARKUP = /<\/?tool_call>/i;
+
 export function decodeChatCompletion(body: string): ProviderDecoded {
   let parsed: unknown;
   try {
@@ -122,6 +124,9 @@ export function decodeChatCompletion(body: string): ProviderDecoded {
     if (calls !== undefined && calls !== null && !Array.isArray(calls)) return bad("has tool calls that are not a list");
     if (choice.finish_reason !== "stop") return bad("did not finish normally");
     if (typeof message.content !== "string") return bad("has no text");
+    // A tool call written as text (the <tool_call> markup some open models emit when the server does not parse it) is neither an
+    // answer nor a call: refuse it rather than show markup, or a call that never ran, as the answer.
+    if (TOOL_CALL_MARKUP.test(message.content)) return bad("wrote a tool call as text");
     response = { kind: "text", text: message.content };
   }
 

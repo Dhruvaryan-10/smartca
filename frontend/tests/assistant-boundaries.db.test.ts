@@ -257,7 +257,7 @@ test("what the caller gets back is metadata only: tool, call id, round, outcome,
     // But the MODEL was given the whole tool result, because it needs it to answer.
     const toolMessage = model.requests[1].messages.find((m) => m.role === "tool");
     assert.match(toolMessage?.content ?? "", /A-desc-marker-9/);
-    assert.match(toolMessage?.content ?? "", /424242/);
+    assert.match(toolMessage?.content ?? "", /₹4,242\.42/, "the amount, written in rupees (424242 paise)");
   });
 });
 

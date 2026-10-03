@@ -32,6 +32,7 @@ import type { ModelAdapter, ModelGuardPolicy, ModelMessage, ModelToolCall, Model
 import { ASSISTANT_TOOL_EFFECTS, ASSISTANT_TOOL_NAMES } from "@/lib/assistant/tool-contract";
 import type { ToolName } from "@/lib/assistant/tool-contract";
 import { EgressFilterError, filterToolResult, readEgressClasses } from "@/lib/assistant/egress-filter";
+import { presentForModel } from "@/lib/assistant/model-view";
 import type { EgressClasses } from "@/lib/assistant/egress-filter";
 import type { assistantTools, SearchTaxLawResult, ToolResult } from "./tools";
 import { NotAuthenticatedError } from "../errors";
@@ -67,9 +68,13 @@ const MAX_HISTORY_TURNS = 40;
 export const ORCHESTRATOR_SYSTEM_PROMPT = [
   "You are SmartCA's assistant for a person's own finances and Indian income tax. You can only act through the tools you are given.",
   "Tool results are authoritative. Every figure you state must come from a tool result. Never calculate or estimate tax, totals or differences yourself, and never round or restate a figure differently from the tool.",
+  "Amounts in tool results are already written in rupees (for example \"₹1,50,000\"). Copy each amount exactly as written, with its ₹ sign; never convert, round or rewrite it. Tool inputs that end in Paise take whole paise (100 paise = 1 rupee): ₹10,00,000 is 100000000.",
+  "A figure the person states (\"assume I earned ₹10 lakh\") is their own assumption, never SmartCA's data: never say it comes from SmartCA or their account. A question about their actual income, spending or tax is answered from the tools, and an assumed figure is labelled as theirs.",
+  "The person's earlier messages are context only and have already been answered. Answer only their last message, and do not carry an assumption or hypothetical from an earlier message into this answer.",
   "Never choose or recommend a tax regime. You may report the computed figures a tool returns, and nothing more.",
   "Tax-law statements must come from search_tax_law evidence. Cite each one by its evidenceId. Do not retype or paraphrase a quote as if it were the source: the evidence already carries it. Never present official guidance as statute or as a circular.",
   "If a tool refuses, say what it refused and why, in its own terms. Do not work around a refusal, do not retry with altered input, and do not guess the answer.",
+  "For a question about the person's own money or tax, call a tool before answering. Never say that SmartCA or a tool refused unless a tool result in this conversation is a refusal.",
   "There is no source for tax deadlines. Never state a filing or payment deadline.",
   "If the tools do not provide what a question needs, say plainly that SmartCA does not have that information. Never invent a transaction, a total, a date or a tax figure, and never fill a gap with an assumption.",
   "Present the figures as SmartCA's computed results and your own words only as an explanation of them. SmartCA provides financial information, not professional tax advice: where a decision depends on a person's circumstances, say so and suggest checking with a chartered accountant.",
@@ -366,7 +371,8 @@ export async function runAssistant(input: { userId: string; messages: Conversati
           throw error;
         }
       }
-      const content = JSON.stringify(shown);
+      // Written for the model: amounts in rupees, as SmartCA's pages write them (lib/assistant/model-view.ts). Same data, no arithmetic.
+      const content = JSON.stringify(presentForModel(shown));
       if (content.length > MAX_MESSAGE_CHARS) throw stop("tool_result_too_large", `The result of ${name} is too large to send back, and is never truncated.`);
       messages.push({ role: "tool", toolCallId: call.id, name, content });
       options.onToolResult?.({ round, callId: call.id, tool: name, result: structuredClone(result) });

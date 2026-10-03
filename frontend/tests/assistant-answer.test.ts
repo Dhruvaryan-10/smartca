@@ -28,6 +28,7 @@ import {
   COMPARISON_NOTICE, LEDGER_DATA_NOTICE, calcRecord, calcResult, compareRecord, compareResult, engineInput, evidence, evidenceId, inr,
   searchRecord, searchRefusal, simulateDelta, simulateRecord, summaryRecord, taxRefusal, transactionsRecord,
 } from "./helpers-answer";
+import { presentForModel } from "../lib/assistant/model-view";
 
 const FRONTEND = path.resolve(__dirname, "..");
 const OLD = calcResult("old");
@@ -619,7 +620,7 @@ test("the orchestrator hands each tool result to an opt-in callback, in order, a
 
   assert.deepEqual(seen.map((r) => [r.round, r.callId, r.tool, r.result.status]), [[1, "a", "get_financial_summary", "ok"], [1, "b", "calculate_tax", "ok"]]);
   const toolMessage = model.requests[1].messages.find((m) => m.role === "tool" && m.toolCallId === "b");
-  assert.equal(toolMessage?.content, JSON.stringify(canned), "the callback's mutation of its copy changed nothing the model received");
+  assert.equal(toolMessage?.content, JSON.stringify(presentForModel(canned)), "the callback's mutation of its copy changed nothing the model received");
   assert.equal(((canned.result as { totalTaxPaise: number })).totalTaxPaise, 4_200_000, "nor the tool's own object");
   assert.equal(JSON.stringify(result).includes("4200000"), false, "and the returned result still carries no tool result");
   assert.deepEqual(Object.keys(result).sort(), ["evidenceIds", "rounds", "text", "toolCalls"]);

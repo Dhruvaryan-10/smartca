@@ -26,6 +26,7 @@ import type { ToolResult } from "../services/assistant/tools";
 import { NotAuthenticatedError } from "../services/errors";
 import { USER, ask, call, errorCode, insistentModel, rejectsWith, scriptedModel, stubTools, taxBody, text, toolCalls } from "./helpers-orchestrator";
 import type { AssistantTools } from "./helpers-orchestrator";
+import { presentForModel } from "../lib/assistant/model-view";
 
 const FRONTEND = path.resolve(__dirname, "..");
 
@@ -119,7 +120,7 @@ test("the model cannot select an arbitrary function: a name is looked up in the 
 test("no write tool is reachable: the orchestrator imports no write path, database client or raw service", () => {
   const source = code("services/assistant/orchestrator.ts");
   const specifiers = [...new Set([...source.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(specifiers, ["./model", "./tools", "../errors", "@/lib/assistant/args", "@/lib/assistant/egress-filter", "@/lib/assistant/tool-contract", "@/lib/money-input"].sort(), "an import here is a decision");
+  assert.deepEqual(specifiers, ["./model", "./tools", "../errors", "@/lib/assistant/args", "@/lib/assistant/egress-filter", "@/lib/assistant/model-view", "@/lib/assistant/tool-contract", "@/lib/money-input"].sort(), "an import here is a decision");
   // "./tools" is a TYPE import only; the real tool set is loaded by the one dynamic import, and only when the caller gave no tools.
   assert.match(source, /import type \{[^}]*\} from "\.\/tools"/, "the static import of ./tools is type-only");
   assert.doesNotMatch(source, /^import\s+\{[^}]*\}\s+from\s+"\.\/tools"/m, "no runtime import of ./tools at load time");
@@ -282,7 +283,7 @@ test("deterministic tool output is passed back unchanged, byte for byte, and onl
   const model = scriptedModel(toolCalls(call("c", "calculate_tax", { regime: "old", ...taxBody })), text("ok"));
   const result = await runAssistant({ userId: USER, messages: ask() }, { model, tools });
   const toolMessage = model.requests[1].messages.find((m) => m.role === "tool");
-  assert.equal(toolMessage?.content, JSON.stringify(canned));
+  assert.equal(toolMessage?.content, JSON.stringify(presentForModel(canned)));
   assert.deepEqual(result.toolCalls, [{ round: 1, callId: "c", tool: "calculate_tax", outcome: "ok", reason: null, evidenceIds: [] }]);
 });
 
@@ -368,3 +369,34 @@ test("the caller must be authenticated, and may only send user and assistant tex
 });
 
 const code = (relative: string) => fs.readFileSync(path.join(FRONTEND, relative), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+test("the system prompt says amounts arrive written in rupees, to be copied exactly (found with a real local model)", () => {
+  // A real 7B model shown paise repeated them as rupees (₹15,000,000 for ₹1,50,000) or divided wrongly (₹1,50,00,000); the answer
+  // layer withheld every such answer. Results are now written in rupees (lib/assistant/model-view.ts) and the model copies them.
+  for (const rule of [/already written in rupees/i, /copy each amount exactly as written/i, /never convert, round or rewrite/i, /take whole paise/i]) {
+    assert.match(ORCHESTRATOR_SYSTEM_PROMPT, rule);
+  }
+});
+
+test("the system prompt says earlier messages were already answered and their assumptions do not carry over", () => {
+  // The client sends the person's earlier questions, never the model's answers; without this a model re-answered every earlier
+  // question and carried "Assume I earned ₹10 lakh" into later turns.
+  for (const rule of [/already been answered/i, /answer only their last message/i, /do not carry an assumption or hypothetical/i]) {
+    assert.match(ORCHESTRATOR_SYSTEM_PROMPT, rule);
+  }
+});
+
+test("the system prompt says a figure the person states is their assumption, never SmartCA's data (found with a real local model)", () => {
+  // Asked "Assume I earned ₹10 lakh. What is my total income?", a real model called no tool and said ₹10,00,000 was "as per the data
+  // in your SmartCA account". The answer layer may let the person's own figure be repeated, so the attribution rule lives here.
+  for (const rule of [/their own assumption, never SmartCA's data/i, /never say it comes from SmartCA or their account/i, /answered from the tools/i, /labelled as theirs/i]) {
+    assert.match(ORCHESTRATOR_SYSTEM_PROMPT, rule);
+  }
+});
+
+test("the system prompt requires a tool call for the person's own figures and forbids an invented refusal (found with a real local model)", () => {
+  // A real model answered "What are my total expenses?" without calling any tool, claiming SmartCA had refused for privacy reasons.
+  for (const rule of [/call a tool before answering/i, /never say that SmartCA or a tool refused unless a tool result in this conversation is a refusal/i]) {
+    assert.match(ORCHESTRATOR_SYSTEM_PROMPT, rule);
+  }
+});

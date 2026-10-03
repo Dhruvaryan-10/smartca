@@ -22,6 +22,7 @@ import {
   createSyntheticTools,
 } from "../services/assistant/synthetic-tools";
 import { USER, ask, call, rejectsWith, scriptedModel, stubTools, text, toolCalls } from "./helpers-orchestrator";
+import { presentForModel } from "../lib/assistant/model-view";
 
 const FRONTEND = path.resolve(__dirname, "..");
 const FREE = "qzfreeq";
@@ -224,16 +225,16 @@ test("with visibleClasses, the MODEL is sent the filtered result, while onToolRe
   const sent = model.requests[1].messages.find((m) => m.role === "tool");
   assert.ok(sent && sent.role === "tool");
   assert.equal(sent.content.includes(FREE), false, "no free text was ever serialized for the model");
-  assert.equal(sent.content, JSON.stringify(filterToolResult("query_transactions", ledgerResult(), without("user_free_text"))));
+  assert.equal(sent.content, JSON.stringify(presentForModel(filterToolResult("query_transactions", ledgerResult(), without("user_free_text")))));
   assert.deepEqual(records, [ledgerResult()], "the server-side record is the raw result");
 });
 
-test("without visibleClasses nothing changes: the model is sent the raw result byte for byte", async () => {
+test("without visibleClasses nothing is filtered: the model is sent the whole raw result, written for the model (amounts in rupees)", async () => {
   const model = scriptedModel(toolCalls(call("c1", "query_transactions", {})), text("Done."));
   const { tools } = stubTools({ query_transactions: ledgerResult() as never });
   await runAssistant({ userId: USER, messages: ask() }, { model, tools });
   const sent = model.requests[1].messages.find((m) => m.role === "tool");
-  assert.equal(sent?.content, JSON.stringify(ledgerResult()));
+  assert.equal(sent?.content, JSON.stringify(presentForModel(ledgerResult())));
 });
 
 test("an unclassified field stops the run before any of that result is sent, and the call stays on the record", async () => {

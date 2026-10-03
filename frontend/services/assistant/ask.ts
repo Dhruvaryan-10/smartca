@@ -77,12 +77,30 @@ function boundary(error: unknown): Error {
   return new AssistantFailure("unexpected_failure", error);
 }
 
+/**
+ * The ONE user turn the model sees: the person's last message, preceded (when there are any) by their earlier messages, labelled as
+ * context already answered. The client sends the person's words only, never the model's earlier answers, so as separate turns they
+ * read as a list of unanswered questions: a real local model answered every one of them again and carried an earlier "assume I
+ * earned ₹10 lakh" into later answers. Still only the person's own words, in a user turn. Earlier messages are context, so the oldest
+ * are dropped first if the turn would exceed MAX_MESSAGE_CHARS; the last message is never cut.
+ */
+function conversationTurn(userMessages: readonly string[]): string {
+  const last = userMessages[userMessages.length - 1];
+  let earlier = userMessages.slice(0, -1);
+  const compose = (list: readonly string[]) =>
+    list.length === 0
+      ? last
+      : `Earlier questions in this conversation (already answered; context only, do not answer them again):\n${list.map((m) => `- ${m}`).join("\n")}\n\nQuestion to answer now:\n${last}`;
+  while (earlier.length > 0 && compose(earlier).length > MAX_MESSAGE_CHARS) earlier = earlier.slice(1);
+  return compose(earlier);
+}
+
 export async function askAssistant(input: AskInput, deps: AskDeps): Promise<Answer> {
   try {
     const { userId, userMessages } = readInput(input);
     const records: ToolRecord[] = [];
     const run = await runAssistant(
-      { userId, messages: userMessages.map((content) => ({ role: "user" as const, content })) },
+      { userId, messages: [{ role: "user" as const, content: conversationTurn(userMessages) }] },
       {
         model: deps.model,
         ...(deps.tools === undefined ? {} : { tools: deps.tools }),

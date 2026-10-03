@@ -11,6 +11,7 @@ import type { ModelMessage } from "../services/assistant/model";
 import { createAssistantTools } from "../services/assistant/tools";
 import type { TaxRetrievalResult } from "../services/tax-retrieval";
 import { USER, ask, call, evidence, scriptedModel, taxBody, text, toolCalls } from "./helpers-orchestrator";
+import { presentForModel } from "../lib/assistant/model-view";
 
 test("a refusal from calculate_tax is preserved: the engine's own refusal reaches the model unchanged, and nothing is recomputed", async () => {
   const tools = createAssistantTools();
@@ -62,10 +63,10 @@ test("tax evidence ids survive the round trip, in the tool message and in the re
   assert.match(ORCHESTRATOR_SYSTEM_PROMPT, /do not retype/i);
 });
 
-test("deterministic tool output from the REAL engine is passed back exactly as the tool returns it", async () => {
+test("deterministic tool output from the REAL engine is passed back exactly as the tool returns it, amounts written in rupees", async () => {
   const real = createAssistantTools();
   const args = { regime: "old", ...taxBody };
   const realModel = scriptedModel(toolCalls(call("c", "calculate_tax", args)), text("ok"));
   await runAssistant({ userId: USER, messages: ask() }, { model: realModel, tools: real });
-  assert.equal(realModel.requests[1].messages.find((m) => m.role === "tool")?.content, JSON.stringify(await real.calculate_tax(USER, args)));
+  assert.equal(realModel.requests[1].messages.find((m) => m.role === "tool")?.content, JSON.stringify(presentForModel(await real.calculate_tax(USER, args))));
 });

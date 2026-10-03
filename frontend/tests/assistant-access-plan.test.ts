@@ -17,6 +17,7 @@ import { ModelProviderError } from "../services/assistant/model";
 import type { ModelAdapter, ModelRequest } from "../services/assistant/model";
 import { runAssistant } from "../services/assistant/orchestrator";
 import { call, stubTools } from "./helpers-orchestrator";
+import { presentForModel } from "../lib/assistant/model-view";
 
 const FRONTEND = path.resolve(__dirname, "..");
 const USER = "8f3a1c0e-5b7d-4c1a-9e2f-0a1b2c3d4e5f";
@@ -152,7 +153,7 @@ test("a plan passed to the orchestrator limits the declared tools, filters what 
   await runAssistant({ userId: USER, messages: [{ role: "user", content: "How much on food?" }] }, { model, tools: stubTools({ query_transactions: ledger as never }).tools, ...options });
   assert.deepEqual(model.requests[0].tools?.map((t) => t.name), [...plan.allowedTools]);
   const sent = model.requests[1].messages.find((m) => m.role === "tool");
-  assert.equal(sent?.content, JSON.stringify(filterToolResult("query_transactions", ledger, plan.visibleClasses)));
+  assert.equal(sent?.content, JSON.stringify(presentForModel(filterToolResult("query_transactions", ledger, plan.visibleClasses))));
 
   const other = script("recipient-b");
   await assert.rejects(
