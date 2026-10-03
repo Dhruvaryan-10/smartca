@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createUser } from "@/services/users";
 import { EmailAlreadyRegisteredError, ValidationError } from "@/services/errors";
+import { loggableError } from "../../_lib/respond-error";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
@@ -21,8 +22,9 @@ export async function POST(req: Request) {
     if (err instanceof EmailAlreadyRegisteredError) {
       return NextResponse.json({ error: err.message }, { status: 409 });
     }
-    // Log the real cause server-side only; never leak internals to the client.
-    console.error("Signup failed:", err);
+    // Log what failed server-side only, never the error itself: the driver's message carries the insert's parameters (email,
+    // name, password hash). Never leak internals to the client.
+    console.error("Signup failed:", loggableError(err));
     return NextResponse.json({ error: "Signup failed. Please try again." }, { status: 500 });
   }
 }

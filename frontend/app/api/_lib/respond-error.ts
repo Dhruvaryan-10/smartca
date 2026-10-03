@@ -3,6 +3,7 @@
 // details (stack traces, SQL, file paths); unexpected errors are logged
 // server-side and returned to the client as a plain 500.
 import { NextResponse } from "next/server";
+import { pgErrorCode } from "@/db/pg-errors";
 import {
   ConflictError,
   NotAuthenticatedError,
@@ -19,6 +20,19 @@ import {
   UnsupportedTaxRuleError,
 } from "@/tax-engine";
 
+/**
+ * What an unexpected error may put in the server log: its class, a PostgreSQL error code and the stack FRAMES. Never the message
+ * or the error object itself: the pg driver puts the statement and its parameters there (amounts, descriptions, an email, a
+ * password hash on signup).
+ */
+export function loggableError(err: unknown): { name: string; pgCode?: string; frames?: string } {
+  const name = err instanceof Error ? err.constructor.name : typeof err;
+  const pgCode = pgErrorCode(err);
+  const stack = err instanceof Error && typeof err.stack === "string" ? err.stack : "";
+  const frames = stack.split("\n").filter((line) => /^\s+at /.test(line)).slice(0, 8).join("\n");
+  return { name, ...(pgCode ? { pgCode } : {}), ...(frames ? { frames } : {}) };
+}
+
 export function respondToError(err: unknown): NextResponse {
   // Tax-engine errors carry a stable `code` so the client can tell them
   // apart. Their messages are written for people (never stack traces, SQL
@@ -34,7 +48,7 @@ export function respondToError(err: unknown): NextResponse {
     return NextResponse.json({ error: err.message, code: "unsupported_tax_rule" }, { status: 422 });
   }
   if (err instanceof TaxEngineInternalError) {
-    console.error("Tax engine self-check failed:", err);
+    console.error("Tax engine self-check failed:", loggableError(err));
     return NextResponse.json(
       { error: "The tax calculation could not be completed. Please try again later.", code: "tax_engine_error" },
       { status: 500 },
@@ -69,6 +83,6 @@ export function respondToError(err: unknown): NextResponse {
       { status: 422 },
     );
   }
-  console.error("Unhandled API error:", err);
+  console.error("Unhandled API error:", loggableError(err));
   return NextResponse.json({ error: "Internal server error" }, { status: 500 });
 }
