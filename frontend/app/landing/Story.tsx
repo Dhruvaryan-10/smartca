@@ -86,7 +86,7 @@ export function SummaryChapter() {
       points={["Net savings, set on an accounting double rule", "Income, expenses and savings rate side by side", "Each month compared in plain words"]}
       visual={
         <ProductFrame title="Summary">
-          <SummaryHero summary={EXAMPLE_SUMMARY} />
+          <SummaryHero summary={EXAMPLE_SUMMARY} fitToContainer />
         </ProductFrame>
       }
     >

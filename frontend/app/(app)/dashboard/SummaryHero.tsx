@@ -7,15 +7,20 @@ import { Money } from "../../components/ui/Money";
 // rule (the one per view), then the money-flow bar that explains it and
 // the three figures it is made of. Large surfaces stay neutral; colour
 // sits only on figures and the bar's segments.
-export function SummaryHero({ summary }: { summary: Summary }) {
+//
+// `fitToContainer` (the landing page, where it sits in a card narrower than the viewport): the figure and the bar go side by
+// side when the card is wide enough for both, not when the viewport is, so the bar never spills out of the card.
+export function SummaryHero({ summary, fitToContainer = false }: { summary: Summary; fitToContainer?: boolean }) {
   const { savingsPaise, incomePaise, expensePaise, savingsRatePercent } = summary;
   const overspent = savingsPaise < 0;
   const flow = moneyFlow(incomePaise, expensePaise);
+  const columns = fitToContainer ? "grid gap-10 @3xl:grid-cols-12 @3xl:items-end @3xl:gap-16" : "grid gap-10 lg:grid-cols-12 lg:items-end lg:gap-16";
+  const half = fitToContainer ? "@3xl:col-span-6" : "lg:col-span-6";
 
   return (
-    <section aria-labelledby="net-savings" className="space-y-10">
-      <div className="grid gap-10 lg:grid-cols-12 lg:items-end lg:gap-16">
-        <div className="lg:col-span-6">
+    <section aria-labelledby="net-savings" className={fitToContainer ? "@container space-y-10" : "space-y-10"}>
+      <div className={columns}>
+        <div className={half}>
           <h2 id="net-savings" className="text-label font-medium text-foreground-muted">
             Net savings
           </h2>
@@ -28,7 +33,7 @@ export function SummaryHero({ summary }: { summary: Summary }) {
           <p className="mt-4 max-w-md text-body text-foreground-secondary">{savingsCaption(savingsPaise, savingsRatePercent, incomePaise)}</p>
         </div>
 
-        <div className="lg:col-span-6">
+        <div className={half}>
           <FlowBar flow={flow} incomePaise={incomePaise} expensePaise={expensePaise} />
         </div>
       </div>
