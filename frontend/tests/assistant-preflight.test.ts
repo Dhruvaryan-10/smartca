@@ -1,6 +1,7 @@
 // The production preflight (services/assistant/preflight.ts). PURE: the database probe is a fake, and the platform fetch is a tripwire.
-// Pinned: a complete, real-looking configuration with a migrated database is ready while the activation gate stays refused; each missing
-// piece fails its own check by NAME; placeholder keys and reserved test hosts are caught; a probe failure is reported without its message;
+// Pinned: a complete, real-looking configuration with a migrated database is ready, and the activation gate reports external mode active;
+// each missing piece fails its own check by NAME; placeholder keys and reserved test hosts are caught, and a loopback endpoint is not even
+// a valid external configuration; a probe failure is reported without its message;
 // and no value (key, endpoint, model, limit, database address) appears anywhere in the report.
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
@@ -42,12 +43,12 @@ function assertNoValues(report: unknown) {
   }
 }
 
-test("a complete configuration and a migrated database are ready, and the activation gate is reported as still refused", async () => {
+test("a complete configuration and a migrated database are ready, and the activation gate reports external mode active", async () => {
   const report = await runAssistantPreflight(ENV, probe(HEALTHY));
   assert.equal(report.ready, true, JSON.stringify(report.checks));
-  assert.equal(report.externalModeActive, false);
+  assert.equal(report.externalModeActive, true);
   assert.deepEqual(report.checks.map((c) => c.name), ["external configuration", "provider target", "wire format", "not a placeholder", "database migrations", "assistant tables", "consent inventory", "activation gate"]);
-  assert.match(checkOf(report, "activation gate")?.detail ?? "", /refused by readAssistantConfig/);
+  assert.equal(checkOf(report, "activation gate")?.detail, "external mode is ACTIVE");
   assert.ok(checkOf(report, "consent inventory")?.detail.includes(fingerprintInventory()));
   assertNoValues(report);
 });
@@ -71,13 +72,21 @@ test("placeholder keys and reserved test hosts are not production values", async
     [{ MODEL_API_KEY: "changeme" }, "MODEL_API_KEY"],
     [{ MODEL_ENDPOINT: "https://provider.invalid/v1/chat/completions" }, "MODEL_ENDPOINT"],
     [{ MODEL_ENDPOINT: "https://api.example.com/v1/chat/completions" }, "MODEL_ENDPOINT"],
-    [{ MODEL_ENDPOINT: "https://localhost/v1/chat/completions" }, "MODEL_ENDPOINT"],
   ] as const) {
     const report = await runAssistantPreflight({ ...ENV, ...over }, probe(HEALTHY));
     assert.equal(report.ready, false, JSON.stringify(over));
     const check = checkOf(report, "not a placeholder");
     assert.deepEqual([check?.ok, check?.detail.endsWith(variable)], [false, true], JSON.stringify(over));
     assert.equal(JSON.stringify(report).includes(Object.values(over)[0]), false, "the value is not echoed");
+  }
+});
+
+test("a loopback endpoint fails the configuration check itself: it is never an external configuration", async () => {
+  for (const endpoint of ["https://localhost/v1/chat/completions", "https://127.0.0.1:11434/v1/chat/completions", "https://[::1]/v1/chat/completions"]) {
+    const report = await runAssistantPreflight({ ...ENV, MODEL_ENDPOINT: endpoint }, probe(HEALTHY));
+    assert.deepEqual([report.ready, report.externalModeActive], [false, false], endpoint);
+    assert.deepEqual([checkOf(report, "external configuration")?.ok, checkOf(report, "external configuration")?.detail], [false, "invalid_configuration: MODEL_ENDPOINT"], endpoint);
+    assert.equal(JSON.stringify(report).includes(endpoint), false, "the value is not echoed");
   }
 });
 

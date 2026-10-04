@@ -4,8 +4,11 @@
 // (SECURITY.md, "Open decisions"). No SDK or package is used; the transport is the platform `fetch`, injectable so that no test needs a
 // key or a network.
 //
-//   ModelRequest + configured model id and output-token cap -> encode -> { model, messages, tools?, <token field> }
+//   ModelRequest + configured model id and output-token cap -> encode -> { model, messages, tools?, <token field>, store: false }
 //                                                                          (nothing else: no user, no metadata, no key)
+//   `store: false` is sent on EVERY request, whatever the wire format: OpenAI stores Chat Completions by default on new accounts (for its
+//   distillation and evals products, docs/decisions/0002 "Provider assessment: OpenAI API"), so SmartCA opts out explicitly rather than
+//   relying on an account setting. It is a constant, not configuration: no request, caller, tool or model answer can change it.
 //   The cap's wire field is chosen HERE and nowhere else: "max_completion_tokens" (OpenAI's current field; the older "max_tokens" is
 //   deprecated there and refused by its reasoning models) or "max_tokens" (what many compatible servers and gateways still require).
 //   The driver is built with exactly one of them (the registry picks it from MODEL_WIRE_FORMAT); a request carries that one, never both.
@@ -82,6 +85,8 @@ export function encodeChatCompletion(request: ModelRequest, target: { modelId: s
     messages: request.messages.map(wireMessage),
     ...(tools.length === 0 ? {} : { tools: tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } })) }),
     [tokenField]: target.maxOutputTokens,
+    // Never stored by the provider as a stored completion (see the header). Last, so nothing above can override it.
+    store: false,
   });
 }
 

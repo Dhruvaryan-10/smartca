@@ -1,8 +1,8 @@
 // The EXTERNAL configuration (services/assistant/config.ts, validateExternalEnv). PURE: no database, no network. What is pinned: every
 // value an external run needs is required and validated, including the per-user limits, the provider's output-token cap and exactly one
 // approved recipient; errors name
-// variables, never values; the key cannot leak through an error; and the reader STILL refuses external mode, with nothing but tests
-// able to build an external configuration.
+// variables, never values; the key cannot leak through an error; the reader accepts external mode only as a complete, valid external
+// configuration; and an external endpoint is never a host on this machine.
 import fs from "node:fs";
 import path from "node:path";
 import { inspect } from "node:util";
@@ -102,8 +102,57 @@ test("the model settings are required and validated exactly as for any mode, and
   assert.deepEqual(rejection({ ...GOOD, MODEL_APPROVED_RECIPIENTS: "recipient-a,recipient-b" }).variables, ["MODEL_APPROVED_RECIPIENTS"]);
 });
 
-test("the reader still refuses external mode: nothing a deployment's environment sets can produce an external configuration", () => {
-  assert.throws(() => readAssistantConfig(GOOD), (e: unknown) => e instanceof AssistantConfigError && e.code === "real_data_mode_not_permitted");
+test("the reader accepts external mode only as the complete, validated external configuration (ADR 0004 item 4)", () => {
+  assert.deepEqual(readAssistantConfig(GOOD), validateExternalEnv(GOOD));
+  assert.equal((readAssistantConfig(GOOD) as { env?: string }).env, "external");
+  // Off still means off, whatever else is set.
+  for (const enabled of [undefined, "", "false"]) assert.deepEqual(readAssistantConfig({ ...GOOD, ASSISTANT_ENABLED: enabled }), { enabled: false });
+  // Unknown modes are still refused.
+  for (const mode of ["real", "External", "production", "openai"]) {
+    assert.throws(() => readAssistantConfig({ ...GOOD, ASSISTANT_ENV: mode }), (e: unknown) => e instanceof AssistantConfigError && e.code === "real_data_mode_not_permitted", mode);
+  }
+});
+
+test("through the reader, every variable an external configuration needs is required: each one missing fails closed, naming it", () => {
+  for (const name of Object.keys(GOOD).filter((n) => n !== "ASSISTANT_ENABLED" && n !== "ASSISTANT_ENV")) {
+    for (const absent of [undefined, "", "   "]) {
+      assert.throws(
+        () => readAssistantConfig({ ...GOOD, [name]: absent }),
+        (e: unknown) => e instanceof AssistantConfigError && e.code === "missing_configuration" && e.variables.includes(name as never) && !String(e).includes(KEY),
+        `${name}=${JSON.stringify(absent)}`,
+      );
+    }
+  }
+});
+
+test("through the reader, an invalid external value fails closed, naming the variable and never the value", () => {
+  const cases: Array<[Record<string, string>, string]> = [
+    [{ MODEL_ENDPOINT: "http://provider.invalid/v1" }, "MODEL_ENDPOINT"],
+    [{ MODEL_ENDPOINT: "https://user:pass@provider.invalid/v1" }, "MODEL_ENDPOINT"],
+    [{ MODEL_APPROVED_RECIPIENTS: "recipient-a,recipient-b" }, "MODEL_APPROVED_RECIPIENTS"],
+    [{ MODEL_WIRE_FORMAT: "anthropic-messages" }, "MODEL_WIRE_FORMAT"],
+    [{ MODEL_MAX_OUTPUT_TOKENS: "0" }, "MODEL_MAX_OUTPUT_TOKENS"],
+    [{ ASSISTANT_MAX_CONCURRENT_RUNS: "200", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "100" }, "ASSISTANT_MAX_CONCURRENT_RUNS"],
+    [{ ASSISTANT_RUN_RETENTION_DAYS: "0" }, "ASSISTANT_RUN_RETENTION_DAYS"],
+  ];
+  for (const [over, name] of cases) {
+    assert.throws(() => readAssistantConfig({ ...GOOD, ...over }), (e: unknown) => e instanceof AssistantConfigError && e.code === "invalid_configuration" && e.variables.includes(name as never) && !String(e).includes(KEY), name);
+  }
+});
+
+test("external mode never uses a host on this machine: a local model's address is refused, so production cannot reach it by mistake", () => {
+  for (const endpoint of [
+    "https://127.0.0.1:11434/v1/chat/completions", "https://127.1/v1", "https://2130706433/v1", "https://127.8.9.10/v1",
+    "https://[::1]:11434/v1", "https://[::ffff:127.0.0.1]/v1", "https://[::]/v1", "https://0.0.0.0/v1", "https://0/v1",
+    "https://localhost/v1", "https://LOCALHOST./v1", "https://models.localhost/v1",
+  ]) {
+    assert.deepEqual(rejection({ ...GOOD, MODEL_ENDPOINT: endpoint }).variables, ["MODEL_ENDPOINT"], endpoint);
+    assert.throws(() => readAssistantConfig({ ...GOOD, MODEL_ENDPOINT: endpoint }), (e: unknown) => e instanceof AssistantConfigError && e.variables.includes("MODEL_ENDPOINT"), endpoint);
+  }
+  // A name that merely contains "localhost" or "127" is an ordinary host.
+  for (const endpoint of ["https://localhost-gateway.invalid/v1", "https://api127.invalid/v1", "https://127.invalid/v1"]) {
+    assert.equal(validateExternalEnv({ ...GOOD, MODEL_ENDPOINT: endpoint }).env, "external", endpoint);
+  }
 });
 
 test("only config.ts and tests refer to validateExternalEnv: no server code can reach external mode by another path", () => {

@@ -5,8 +5,8 @@
 //
 // What is pinned, with ZERO provider calls in every case: the profile is the server's (EXTERNAL_PROFILE) and cannot be chosen or widened by
 // the request; nothing runs without the person's explicit authorization, for this user and the configured recipient; the configuration,
-// not the caller, decides the recipient, and it must approve exactly one; the reader still cannot produce an external configuration;
-// synthetic mode is untouched.
+// not the caller, decides the recipient, and it must approve exactly one; the reader produces an external configuration only from a
+// complete external environment; synthetic mode is untouched.
 import fs from "node:fs";
 import path from "node:path";
 import { test } from "node:test";
@@ -120,8 +120,9 @@ test("an external configuration must approve exactly one recipient: more is refu
   assert.equal(calls.length, 0);
 });
 
-test("the configuration reader still cannot produce an external configuration, and askExternal refuses any other", async () => {
-  assert.throws(() => readAssistantConfig({ ...ENV, ASSISTANT_ENV: "external" }), (e: unknown) => e instanceof AssistantConfigError && e.code === "real_data_mode_not_permitted");
+test("the configuration reader produces an external configuration only from a complete external environment, and askExternal refuses any other", async () => {
+  // ENV alone lacks the provider settings, limits and retention an external configuration requires.
+  assert.throws(() => readAssistantConfig({ ...ENV, ASSISTANT_ENV: "external" }), (e: unknown) => e instanceof AssistantConfigError && e.code === "missing_configuration" && e.variables.includes("MODEL_WIRE_FORMAT"));
   for (const [config, code] of [[readAssistantConfig(ENV), "invalid_configuration"], [{ enabled: false }, "assistant_disabled"]] as Array<[AssistantConfig, string]>) {
     const { run, calls } = attempt({}, config);
     await assert.rejects(run, (e: unknown) => e instanceof AssistantConfigError && e.code === code);

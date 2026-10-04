@@ -8,9 +8,8 @@
 //   4. not a placeholder        the key and endpoint are not the documentation's placeholders or a reserved test host
 //   5. database                 every migration in drizzle/meta/_journal.json is applied, and the assistant tables exist
 //   6. consent inventory        the egress inventory fingerprint in force, which every grant must name (ADR 0002)
-//   7. activation gate          whether readAssistantConfig would accept this environment today. It refuses external mode until the
-//                               reviewed change ADR 0002 requires, so this is reported, not failed: the preflight proves readiness,
-//                               the gate stays a deliberate decision.
+//   7. activation gate          whether readAssistantConfig produces an external configuration from this environment, i.e. whether a
+//                               deployment with it would answer through the provider. Reported, not failed.
 //
 // Every detail is a code, a count, a variable NAME or the inventory fingerprint (public: it is shown in the consent disclosure). Never a
 // key, endpoint, model id, database address or limit value.
@@ -96,7 +95,7 @@ export async function runAssistantPreflight(env: Readonly<Record<string, string 
   } catch {
     externalModeActive = false;
   }
-  checks.push(Object.freeze({ name: "activation gate", ok: true, detail: externalModeActive ? "external mode is ACTIVE" : "external mode is refused by readAssistantConfig until the reviewed ADR 0002 change; not enabled by this check" }));
+  checks.push(Object.freeze({ name: "activation gate", ok: true, detail: externalModeActive ? "external mode is ACTIVE" : "readAssistantConfig does not produce an external configuration from this environment" }));
 
   return Object.freeze({ ready: checks.every((c) => c.ok), externalModeActive, checks: Object.freeze(checks) });
 }

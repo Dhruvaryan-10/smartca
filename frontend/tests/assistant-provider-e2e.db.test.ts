@@ -182,7 +182,8 @@ test("the complete path with the real driver: a tool round-trip over the Chat Co
       assert.deepEqual(call.headers, { "content-type": "application/json", authorization: `Bearer ${KEY}` });
       // Exactly the model request's fields and the configured output-token cap: no user, authorization, session, database state,
       // credential or other limit.
-      assert.deepEqual(Object.keys(call.sent).sort(), ["max_tokens", "messages", "model", "tools"]);
+      assert.deepEqual(Object.keys(call.sent).sort(), ["max_tokens", "messages", "model", "store", "tools"]);
+      assert.equal(call.sent.store, false, "never stored by the provider");
       assert.equal(call.sent.model, MODEL);
       assert.equal(call.sent.max_tokens, Number(ENV.MODEL_MAX_OUTPUT_TOKENS), "the configured cap, on every model request");
       assertNoSecrets("the request body", String(call.init.body), u, granted.authorizationId);

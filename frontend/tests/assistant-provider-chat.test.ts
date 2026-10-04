@@ -14,7 +14,8 @@ import assert from "node:assert/strict";
 import { MAX_PROVIDER_RESPONSE_BYTES, chatCompletionsDriver, encodeChatCompletion, readChatCompletionUsage } from "../services/assistant/provider-chat-completions";
 import type { FetchLike } from "../services/assistant/provider-chat-completions";
 import { createProviderAdapter } from "../services/assistant/provider";
-import { AssistantConfigError, readAssistantConfig, validateExternalEnv } from "../services/assistant/config";
+import { AssistantConfigError, MODEL_WIRE_FORMATS, readAssistantConfig, validateExternalEnv } from "../services/assistant/config";
+import { providerDriverFor } from "../services/assistant/provider-registry";
 import type { AssistantConfig } from "../services/assistant/config";
 import { ModelProviderError, ModelRequestError, ModelResponseError, withModelGuard } from "../services/assistant/model";
 import type { ModelCallInfo, ModelRequest } from "../services/assistant/model";
@@ -101,6 +102,7 @@ test("a valid request: POST to the configured endpoint, the key only as a bearer
     ],
     tools: [{ type: "function", function: { name: "calculate_tax", description: "Calculates tax.", parameters: { type: "object", properties: {} } } }],
     max_tokens: 1024,
+    store: false,
   });
   assert.deepEqual(response, { kind: "text", text: "Your tax is 1,000.", meta: { recipient: RECIPIENT, model: MODEL, inputTokens: 10, outputTokens: 2 } });
 });
@@ -116,7 +118,26 @@ test("tool calls come back in the model contract's safe form, broken argument te
 test("a request with no tools sends no tools field", async () => {
   const { fetch, seen } = fakeFetch(() => json(text("hi")));
   await adapterFor(fetch).complete({ messages: [{ role: "user", content: "hi" }] });
-  assert.deepEqual(Object.keys(seen[0].sent).sort(), ["max_tokens", "messages", "model"]);
+  assert.deepEqual(Object.keys(seen[0].sent).sort(), ["max_tokens", "messages", "model", "store"]);
+});
+
+// --- provider-side storage ----------------------------------------------------------------------------------------------------------
+
+test("every request, in every wire format, sends store: false, and nothing a caller or request supplies can change it", async () => {
+  for (const format of MODEL_WIRE_FORMATS) {
+    const { fetch, seen } = fakeFetch(() => json(text("hi")));
+    const config = external({ MODEL_WIRE_FORMAT: format }) as Extract<AssistantConfig, { env: "external" }>;
+    const adapter = createProviderAdapter(config, providerDriverFor(config, { fetch })); // the registry's driver for this format
+    await adapter.complete(REQUEST);
+    await adapter.complete({ messages: [{ role: "user", content: "hi" }] });
+    // A smuggled `store` on the request or the call options never reaches the wire as anything but false.
+    await adapter.complete({ ...REQUEST, store: true } as unknown as ModelRequest, { store: true } as never);
+    assert.equal(seen.length, 3, format);
+    for (const { sent, init } of seen) {
+      assert.equal(sent.store, false, format);
+      assert.equal((String(init.body).match(/"store"/g) ?? []).length, 1, "exactly one store field");
+    }
+  }
 });
 
 // --- the output-token cap ---------------------------------------------------------------------------------------------------------
@@ -128,7 +149,7 @@ test("every request carries the configured output-token cap as max_tokens, and n
   await adapter.complete({ messages: [{ role: "user", content: "hi" }] });
   assert.deepEqual(seen.map((s) => s.sent.max_tokens), [321, 321]);
   for (const { sent } of seen) {
-    for (const key of Object.keys(sent)) assert.ok(["model", "messages", "tools", "max_tokens"].includes(key), key);
+    for (const key of Object.keys(sent)) assert.ok(["model", "messages", "tools", "max_tokens", "store"].includes(key), key);
     for (const other of ["max_completion_tokens", "max_output_tokens", "maxOutputTokens", "maxOutputChars", "max_length"]) assert.equal(other in sent, false, other);
   }
 });
@@ -186,8 +207,12 @@ test("malformed configuration fails closed, names variables and never values, an
     [() => external({ MODEL_MAX_OUTPUT_TOKENS: undefined }), "missing_configuration", "MODEL_MAX_OUTPUT_TOKENS"],
     [() => external({ MODEL_MAX_OUTPUT_TOKENS: "0" }), "invalid_configuration", "MODEL_MAX_OUTPUT_TOKENS"],
     [() => external({ MODEL_MAX_OUTPUT_TOKENS: "1e3" }), "invalid_configuration", "MODEL_MAX_OUTPUT_TOKENS"],
-    // The one reader a deployment uses still refuses external mode outright (ADR 0002).
-    [() => readAssistantConfig(ENV), "real_data_mode_not_permitted", "ASSISTANT_ENV"],
+    // The one reader a deployment uses refuses an external environment missing any provider setting.
+    [() => readAssistantConfig({ ...ENV, MODEL_WIRE_FORMAT: "" }), "missing_configuration", "MODEL_WIRE_FORMAT"],
+    // ...and one whose endpoint is on this machine.
+    [() => external({ MODEL_ENDPOINT: "https://127.0.0.1:11434/v1/chat/completions" }), "invalid_configuration", "MODEL_ENDPOINT"],
+    // ...and an unknown mode.
+    [() => readAssistantConfig({ ...ENV, ASSISTANT_ENV: "real" }), "real_data_mode_not_permitted", "ASSISTANT_ENV"],
     // A synthetic configuration can never build a provider.
     [() => readAssistantConfig({ ...ENV, ASSISTANT_ENV: "synthetic" }), "invalid_configuration", "ASSISTANT_ENV"],
     [() => ({ enabled: false }), "assistant_disabled", ""],
