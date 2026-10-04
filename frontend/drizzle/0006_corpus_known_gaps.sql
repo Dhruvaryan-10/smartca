@@ -1,0 +1,1 @@
+ALTER TABLE "tax_corpus_releases" ADD COLUMN "known_gaps" jsonb DEFAULT '[]'::jsonb NOT NULL;

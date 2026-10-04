@@ -22,6 +22,7 @@ const PURE_SOURCE = [
   "lib/assistant/profiles.ts",
   "lib/assistant/authorization.ts",
   "lib/assistant/egress-filter.ts",
+  "lib/assistant/law-question.ts",
   "lib/assistant/access-plan.ts",
   "lib/assistant/egress-disclosure.ts",
   "lib/assistant/run-limits.ts",
@@ -70,6 +71,8 @@ const PURE_TESTS = [
   "tests/assistant-consent.test.ts",
   "tests/assistant-provider-registry.test.ts",
   "tests/assistant-preflight.test.ts",
+  "tests/assistant-local-config.test.ts",
+  "tests/assistant-model-view.test.ts",
 ];
 const PURE_HELPERS = ["tests/helpers-answer.ts", "tests/helpers-errors.ts", "tests/helpers-orchestrator.ts", "tests/helpers-provider.ts", "tests/helpers-limiter.ts"];
 

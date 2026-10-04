@@ -19,6 +19,9 @@ import { askAssistant } from "../services/assistant/ask";
 import { createAssistantTools } from "../services/assistant/tools";
 import { SYNTHETIC_CALC_ARGS, SYNTHETIC_SEARCH_ARGS, SYNTHETIC_SIMULATE_ARGS, SYNTHETIC_TAX_BODY, SYNTHETIC_USER_ID, createSyntheticTools } from "../services/assistant/synthetic-tools";
 import type { ToolResult } from "../services/assistant/tools";
+import { SAVED_COMPUTATION_NOTICE } from "../services/assistant/tools";
+import { calculateTax, comparisonNumbers } from "../tax-engine";
+import type { ComparisonInput } from "../tax-engine";
 import type { TaxRetrievalResult } from "../services/tax-retrieval";
 import { calcRecord, calcResult, compareRecord, evidence as helperEvidence, inr, searchRecord, simulateRecord, summaryRecord, transactionsRecord } from "./helpers-answer";
 import { USER, call, evidence as retrievedEvidence, scriptedModel, taxBody, text, toolCalls } from "./helpers-orchestrator";
@@ -29,7 +32,12 @@ const ROWS = [
   { id: "r3", occurredOn: "2026-03-05", type: "expense", amountPaise: 5_000, category: "Food", description: null, source: null },
 ];
 const FOUND: TaxRetrievalResult = { status: "ok", assessmentYear: "2026-27", corpusVersion: "v1", evidence: [retrievedEvidence(1), retrievedEvidence(2)], unmatchedSectionRefs: [], sectionResolutions: [] };
-const tools = createAssistantTools({ retrieve: async () => FOUND, listTransactions: async () => ROWS as never });
+// A saved computation exactly as services/tax.ts returns it: the engine's own results for both regimes.
+const savedInput: ComparisonInput = { assessmentYearLabel: "2026-27", ageCategory: "below60", incomeSources: [{ kind: "salary", label: "Salary", amountPaise: 150_000_000 }], deductions: [] };
+const savedOld = calculateTax({ ...savedInput, regime: "old" });
+const savedNew = calculateTax({ ...savedInput, regime: "new" });
+const SAVED = { assessmentYear: "2026-27", savedAt: "2026-10-01T10:00:00.000Z", savedComputations: 1, input: savedInput, results: { old: savedOld, new: savedNew }, numbers: comparisonNumbers(savedOld, savedNew) };
+const tools = createAssistantTools({ retrieve: async () => FOUND, listTransactions: async () => ROWS as never, getLatestSavedTaxComputation: async () => SAVED });
 const scenario = { assessmentYear: taxBody.assessmentYear, ageCategory: taxBody.ageCategory, income: taxBody.income };
 
 const real = async () => ({
@@ -39,13 +47,14 @@ const real = async () => ({
   calculate_tax: await tools.calculate_tax(USER, { regime: "old", ...taxBody }),
   compare_tax_regimes: await tools.compare_tax_regimes(USER, taxBody),
   simulate_tax: await tools.simulate_tax(USER, { regime: "old", base: taxBody, scenario }),
+  get_saved_tax_computation: await tools.get_saved_tax_computation(USER, {}),
 } as const);
 
 const drift = (tool: string, what: string) => `${tool}: ${what}. The tool's result shape and lib/assistant/answer.ts (parseOk) must change together: update the reader and this test.`;
 const record = (tool: string, result: ToolResult<unknown>): ToolRecord => ({ round: 1, callId: `${tool}-1`, tool, result });
 const problems = (a: ReturnType<typeof buildAnswer>) => a.violations.filter((v) => v.code === "invalid_tool_result" || v.code === "invalid_tool_record");
 
-test("B6: every one of the six real tools succeeds here, so the contract below is checked on real output", async () => {
+test("B6: every one of the seven real tools succeeds here, so the contract below is checked on real output", async () => {
   const results = await real();
   for (const [tool, result] of Object.entries(results)) assert.equal(result.status, "ok", `${tool} should succeed on these inputs, got ${JSON.stringify(result).slice(0, 200)}`);
 });
@@ -78,6 +87,11 @@ test("B6: the answer layer accepts each real tool result, and turns it into the 
   assert.equal(compare.facts.taxValues[0]?.shape, "regime_comparison", drift("compare_tax_regimes", "no comparison fact"));
   assert.ok(compare.facts.taxValues[0].notice !== null, drift("compare_tax_regimes", "the comparison's notice is not preserved"));
 
+  const saved = facts("get_saved_tax_computation");
+  assert.deepEqual(problems(saved), [], drift("get_saved_tax_computation", "the answer layer rejects the real result"));
+  assert.equal(saved.facts.taxValues[0]?.shape, "saved_computation", drift("get_saved_tax_computation", "no saved-computation fact"));
+  assert.equal(saved.facts.taxValues[0]?.notice, SAVED_COMPUTATION_NOTICE, drift("get_saved_tax_computation", "the notice is not carried"));
+
   const simulate = facts("simulate_tax");
   assert.deepEqual(problems(simulate), [], drift("simulate_tax", "the answer layer rejects the real result"));
   assert.equal(simulate.facts.taxValues[0]?.shape, "scenario", drift("simulate_tax", "no scenario fact"));
@@ -98,7 +112,8 @@ test("B6: refusals from the real tools keep their reason and detail through the 
 /** The result keys of each tool, pinned. A renamed or removed key must fail HERE, with a message naming the tool. */
 const KEYS: Record<string, string[]> = {
   search_tax_law: ["assessmentYear", "corpusVersion", "evidence", "sectionResolutions", "unmatchedSectionRefs"],
-  query_transactions: ["dataNotice", "descriptionsIncluded", "fieldsTruncated", "filter", "matched", "returned", "totals", "transactions", "truncated"],
+  query_transactions: ["dataNotice", "descriptionsIncluded", "fieldsTruncated", "filter", "matched", "returned", "sortedBy", "totals", "transactions", "truncated"],
+  get_saved_tax_computation: ["assessmentYear", "input", "notice", "numbers", "results", "savedAt", "savedComputations"],
   get_financial_summary: ["categories", "expensePaise", "incomePaise", "months", "monthsTruncated", "period", "periodIsDefault", "range", "savingsPaise", "savingsRatePercent", "transactionCount"],
   calculate_tax: ["assessmentYear", "input", "regime", "result"],
   compare_tax_regimes: ["assessmentYear", "comparison", "input", "notice"],

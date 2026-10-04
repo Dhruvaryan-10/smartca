@@ -1,23 +1,75 @@
 {
-  "corpusVersion": "ay-2026-27-v1",
+  "corpusVersion": "ay-2026-27-v2",
   "governingAct": "Income-tax Act, 1961",
   "assessmentYear": "2026-27",
-  "description": "Seed corpus for AY 2026-27 (FY 2025-26): two official Income Tax Department e-Filing portal guidance pages, taken verbatim. Governed by the Income-tax Act, 1961. Guidance only: no statute text is included yet (see knownGaps).",
+  "description": "AY 2026-27 (FY 2025-26) corpus, governed by the Income-tax Act, 1961: official Income Tax Department e-Filing portal guidance only, taken verbatim. v2 (2026-10-03) adds, from the same AY 2026-27 salaried page (reviewed 09-Jul-2026), the returns and forms applicable and the remaining old-regime deductions, and from undated portal FAQ pages only the answers that agree with that page (the 80C to 80CCD(1B) descriptions, the regime rules that still hold, AIS, TIS and Form 26AS, advance and self-assessment tax). No statute or circular text is included yet (see knownGaps).",
   "knownGaps": [
     {
       "sectionRef": "16(ia)",
       "title": "Standard deduction",
-      "reason": "No official source could be safely obtained. Neither portal page mentions it, and the statute repositories (incometaxindia.gov.in, indiacode.nic.in) returned HTTP 403 to automated requests at curation time."
+      "reason": "No official source could be safely obtained for AY 2026-27. The portal FAQ that mentions it states Rs.50,000 for AY 2024-25, which is out of date for the new regime, so it was left out. The statute repositories (incometaxindia.gov.in, indiacode.nic.in) refused automated requests again at curation on 2026-10-03 (HTTP 403 and a timeout).",
+      "questionPhrases": [
+        "standard deduction"
+      ]
     },
     {
       "sectionRef": "288A",
       "title": "Rounding of total income",
-      "reason": "No official source could be safely obtained (statute repositories returned HTTP 403 to automated requests at curation time; the portal pages do not cover it)."
+      "reason": "No official source could be safely obtained. The statute repositories (incometaxindia.gov.in, indiacode.nic.in) refused automated requests again at curation on 2026-10-03 (HTTP 403 and a timeout)."
     },
     {
       "sectionRef": "288B",
       "title": "Rounding of tax payable",
-      "reason": "No official source could be safely obtained (statute repositories returned HTTP 403 to automated requests at curation time; the portal pages do not cover it)."
+      "reason": "No official source could be safely obtained. The statute repositories (incometaxindia.gov.in, indiacode.nic.in) refused automated requests again at curation on 2026-10-03 (HTTP 403 and a timeout)."
+    },
+    {
+      "sectionRef": "10(13A)",
+      "title": "How the HRA exemption is computed",
+      "reason": "No official source could be safely obtained for how the HRA exemption is computed (Rule 2A). The curated FAQ says only that HRA is exempt under 10(13A) in the old regime and not in the new. The statute repositories (incometaxindia.gov.in, indiacode.nic.in) refused automated requests again at curation on 2026-10-03 (HTTP 403 and a timeout).",
+      "questionPhrases": [
+        "hra exemption calculated",
+        "hra exemption computed",
+        "hra exemption worked out",
+        "calculate hra",
+        "compute hra",
+        "hra calculation",
+        "calculate my hra"
+      ]
+    },
+    {
+      "sectionRef": "112A",
+      "title": "Taxation of capital gains",
+      "reason": "No official source could be safely obtained for the taxation of capital gains (rates, holding periods). The curated pages mention capital gains only for choosing an ITR form. The statute repositories (incometaxindia.gov.in, indiacode.nic.in) refused automated requests again at curation on 2026-10-03 (HTTP 403 and a timeout).",
+      "questionPhrases": [
+        "capital gains tax",
+        "capital gain tax",
+        "tax on capital gains",
+        "tax on capital gain",
+        "capital gains taxed",
+        "tax rate on capital gains"
+      ]
+    },
+    {
+      "sectionRef": "192",
+      "title": "TDS rates and procedure",
+      "reason": "No official source could be safely obtained for TDS rates. The curated pages cover TDS certificates (Forms 16 and 16A), Forms 15G and 15H, and TDS in AIS and Form 26AS. The statute repositories (incometaxindia.gov.in, indiacode.nic.in) refused automated requests again at curation on 2026-10-03 (HTTP 403 and a timeout).",
+      "questionPhrases": [
+        "tds rate",
+        "tds rates",
+        "rate of tds",
+        "rates of tds"
+      ]
+    },
+    {
+      "sectionRef": "44AD",
+      "title": "Business and professional income",
+      "reason": "No official source could be safely obtained for computing business income or presumptive taxation (44AD, 44ADA). Only the ITR-3 and ITR-4 applicability is curated. The statute repositories (incometaxindia.gov.in, indiacode.nic.in) refused automated requests again at curation on 2026-10-03 (HTTP 403 and a timeout).",
+      "questionPhrases": [
+        "presumptive taxation",
+        "presumptive income",
+        "business income computed",
+        "computation of business income"
+      ]
     }
   ],
   "sources": [
@@ -211,6 +263,620 @@
             "deductions",
             "health-insurance",
             "senior-citizen"
+          ],
+          "verificationStatus": "primary_verified"
+        }
+      ]
+    },
+    {
+      "sourceKey": "itd-efiling-salaried-returns-forms-ay-2026-27",
+      "title": "Returns and Forms Applicable for Salaried Individuals for AY 2026-27",
+      "publisher": "Income Tax Department, Government of India (e-Filing portal)",
+      "url": "https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-1#returnsandforms",
+      "authorityTier": "official_guidance",
+      "sourceDate": "2026-07-09",
+      "effectiveFrom": null,
+      "effectiveTo": null,
+      "retrievedAt": "2026-10-03T12:28:22Z",
+      "status": "active",
+      "file": "sources/itd-efiling-salaried-returns-forms-ay-2026-27.txt",
+      "sha256": "4142f61bb4270ebdc5b75fba2f7a102708a9c2ae7c090e7c3849c31a4d3fb80b",
+      "notes": "The 'Returns and Forms Applicable' part of the same page as itd-efiling-salaried-individuals-ay-2026-27 (Page Last Reviewed or Updated: 09-Jul-2026). Overview and general guidance; the page's disclaimer says it is not exhaustive. Text extracted verbatim from the page's HTML (each table cell on its own line); only the curator's headings were added.",
+      "sections": [
+        {
+          "heading": "ITR-1 (SAHAJ)",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "itr",
+            "itr-1",
+            "returns"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "ITR-2",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "itr",
+            "itr-2",
+            "returns",
+            "capital-gains"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "ITR-3",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "itr",
+            "itr-3",
+            "returns",
+            "business"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "ITR-4 (SUGAM)",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "itr",
+            "itr-4",
+            "returns",
+            "presumptive"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Form 12BB",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "forms",
+            "form-12bb",
+            "tds",
+            "hra"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Form 16",
+          "sectionRef": "203",
+          "regime": "both",
+          "topics": [
+            "forms",
+            "form-16",
+            "tds",
+            "salary"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Form 16A",
+          "sectionRef": "203",
+          "regime": "both",
+          "topics": [
+            "forms",
+            "form-16a",
+            "tds"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Form 67",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "forms",
+            "form-67",
+            "foreign-tax-credit"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Form 26AS and AIS",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "forms",
+            "form-26as",
+            "ais",
+            "tds"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Form 15G",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "forms",
+            "form-15g",
+            "tds",
+            "interest"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Form 15H",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "forms",
+            "form-15h",
+            "tds",
+            "interest",
+            "senior-citizen"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Form 10E",
+          "sectionRef": "89(1)",
+          "regime": "both",
+          "topics": [
+            "forms",
+            "form-10e",
+            "relief",
+            "salary-arrears"
+          ],
+          "verificationStatus": "primary_verified"
+        }
+      ]
+    },
+    {
+      "sourceKey": "itd-efiling-salaried-deductions-ay-2026-27",
+      "title": "Investments / Payments / Incomes on which I can get tax benefit (Salaried Individuals, AY 2026-27)",
+      "publisher": "Income Tax Department, Government of India (e-Filing portal)",
+      "url": "https://www.incometax.gov.in/iec/foportal/help/individual/return-applicable-1#taxdeductions",
+      "authorityTier": "official_guidance",
+      "sourceDate": "2026-07-09",
+      "effectiveFrom": null,
+      "effectiveTo": null,
+      "retrievedAt": "2026-10-03T12:28:22Z",
+      "status": "active",
+      "file": "sources/itd-efiling-salaried-deductions-ay-2026-27.txt",
+      "sha256": "d3b1a7a4aba6538e3cc3f6f4607995d1c86d03c3661e47118372b8e2a655b7c5",
+      "notes": "Old-regime deductions from the 'Investments / Payments / Incomes on which I can get tax benefit' part of the same page as itd-efiling-salaried-individuals-ay-2026-27 (Page Last Reviewed or Updated: 09-Jul-2026), other than those that source already holds (80C, 80CCC, 80CCD(1), 80CCD(1B), 80D, and the new-regime 24(b), 80CCD(2) and 80CCH). Text extracted verbatim from the page's HTML (each table cell on its own line); only the curator's headings were added.",
+      "sections": [
+        {
+          "heading": "Section 24(b) in the Old Tax Regime",
+          "sectionRef": "24(b)",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "house-property",
+            "home-loan-interest"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80CCD(2) in the Old Tax Regime",
+          "sectionRef": "80CCD(2)",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "nps",
+            "employer-contribution"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80DD",
+          "sectionRef": "80DD",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "disability"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80DDB",
+          "sectionRef": "80DDB",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "medical-treatment"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80E",
+          "sectionRef": "80E",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "education-loan"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80EE",
+          "sectionRef": "80EE",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "home-loan-interest"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80EEA",
+          "sectionRef": "80EEA",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "home-loan-interest"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80EEB",
+          "sectionRef": "80EEB",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "electric-vehicle-loan"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80G",
+          "sectionRef": "80G",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "donations"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80GG",
+          "sectionRef": "80GG",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "rent",
+            "hra"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80GGA",
+          "sectionRef": "80GGA",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "donations"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80GGC",
+          "sectionRef": "80GGC",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "political-donations"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80TTA",
+          "sectionRef": "80TTA",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "interest",
+            "savings-account"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80TTB",
+          "sectionRef": "80TTB",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "interest",
+            "senior-citizen"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Section 80U",
+          "sectionRef": "80U",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "disability"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        }
+      ]
+    },
+    {
+      "sourceKey": "itd-efiling-deductions-individual",
+      "title": "Deductions on which I can get tax benefit (Individual)",
+      "publisher": "Income Tax Department, Government of India (e-Filing portal)",
+      "url": "https://www.incometax.gov.in/iec/foportal/help/all-topics/tax-payer/individual/deductions-on-which-i-get-tax-benefit",
+      "authorityTier": "official_guidance",
+      "sourceDate": null,
+      "effectiveFrom": null,
+      "effectiveTo": null,
+      "retrievedAt": "2026-10-03T12:28:22Z",
+      "status": "active",
+      "file": "sources/itd-efiling-deductions-individual.txt",
+      "sha256": "19a3b798719e18dbbff9aa8d001c081505c40306503bbdc6431193b2116ac8f0",
+      "notes": "The page shows no review date ('Last reviewed and updated on : current time'). Only the 80C, 80CCC, 80CCD(1) and 80CCD(1B) block is taken: it agrees with the AY 2026-27 page (the ₹1,50,000 and ₹50,000 limits). Its 80CCD(2) text was left out because it disagrees with the AY 2026-27 page (State Government employers). Text extracted verbatim from the page's HTML (each table cell on its own line); only the curator's headings were added.",
+      "sections": [
+        {
+          "heading": "Section 80C, 80CCC and 80CCD(1): what each covers",
+          "sectionRef": "80C",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "80c",
+            "life-insurance",
+            "provident-fund",
+            "equity-shares",
+            "tuition-fees",
+            "nsc",
+            "home-loan-principal"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Section 80CCD(1B): what it covers",
+          "sectionRef": "80CCD(1B)",
+          "regime": "old",
+          "topics": [
+            "deductions",
+            "nps"
+          ],
+          "verificationStatus": "primary_verified"
+        }
+      ]
+    },
+    {
+      "sourceKey": "itd-efiling-new-vs-old-regime-faqs",
+      "title": "FAQs on New Tax vs Old Tax Regime",
+      "publisher": "Income Tax Department, Government of India (e-Filing portal)",
+      "url": "https://www.incometax.gov.in/iec/foportal/help/new-tax-vs-old-tax-regime-faqs",
+      "authorityTier": "official_guidance",
+      "sourceDate": null,
+      "effectiveFrom": null,
+      "effectiveTo": null,
+      "retrievedAt": "2026-10-03T12:28:22Z",
+      "status": "active",
+      "file": "sources/itd-efiling-new-vs-old-regime-faqs.txt",
+      "sha256": "77833fbc90e8014245f0e1cca81177489d7702ca18ea47ebf7ce9a153ce1710c",
+      "notes": "The page shows no review date and is written for AY 2024-25. Only answers that still hold for AY 2026-27 and agree with the AY 2026-27 salaried page are taken. Left out because they are out of date for AY 2026-27: the standard deduction answer (Rs.50,000), the senior-citizen answer (no tax up to Rs. 7 lakh), the section 87A answer (Rs. 7 lakh / Rs. 25,000), and the AY 2024-25 Form 10-IEA procedure answers. Text extracted verbatim; only the curator's headings were added.",
+      "sections": [
+        {
+          "heading": "New tax regime as the default regime, and opting out",
+          "sectionRef": "115BAC",
+          "regime": "both",
+          "topics": [
+            "regime",
+            "default-regime",
+            "opt-out"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Difference between the old and new tax regime",
+          "sectionRef": "115BAC",
+          "regime": "both",
+          "topics": [
+            "regime",
+            "difference"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Choosing between the regimes",
+          "sectionRef": "115BAC",
+          "regime": "both",
+          "topics": [
+            "regime",
+            "choice"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Telling the employer which regime",
+          "sectionRef": "115BAC",
+          "regime": "both",
+          "topics": [
+            "regime",
+            "employer",
+            "tds"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "HRA exemption in the new regime",
+          "sectionRef": "115BAC",
+          "regime": "both",
+          "topics": [
+            "regime",
+            "hra",
+            "exemptions"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Chapter VI-A deductions in the new regime",
+          "sectionRef": "115BAC",
+          "regime": "new",
+          "topics": [
+            "regime",
+            "deductions",
+            "new-regime"
+          ],
+          "verificationStatus": "engine_not_modelled"
+        },
+        {
+          "heading": "Interest on a self-occupied property in the new regime",
+          "sectionRef": "24(b)",
+          "regime": "new",
+          "topics": [
+            "regime",
+            "house-property",
+            "home-loan-interest"
+          ],
+          "verificationStatus": "primary_verified"
+        }
+      ]
+    },
+    {
+      "sourceKey": "itd-efiling-ais-faqs",
+      "title": "FAQs on AIS (Annual Information Statement)",
+      "publisher": "Income Tax Department, Government of India (e-Filing portal)",
+      "url": "https://www.incometax.gov.in/iec/foportal/ais-faq",
+      "authorityTier": "official_guidance",
+      "sourceDate": null,
+      "effectiveFrom": null,
+      "effectiveTo": null,
+      "retrievedAt": "2026-10-03T12:28:22Z",
+      "status": "active",
+      "file": "sources/itd-efiling-ais-faqs.txt",
+      "sha256": "cbe9249dfd8c9f8e142cbe68dad3324afacd20bc19cb01c25c1275c68916d01c",
+      "notes": "The page shows no review date. Questions 1 to 3, 5 and 6 are taken (what AIS is, its parts, completeness, TIS, and AIS versus Form 26AS). Text extracted verbatim; only the curator's headings were added.",
+      "sections": [
+        {
+          "heading": "What is the Annual Information Statement (AIS)",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "ais",
+            "forms"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Components of the AIS",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "ais",
+            "tds",
+            "sft",
+            "forms"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Is all information in the AIS",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "ais"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Taxpayer Information Summary (TIS)",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "tis",
+            "ais"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Difference between AIS and Form 26AS",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "ais",
+            "form-26as",
+            "tds"
+          ],
+          "verificationStatus": "primary_verified"
+        }
+      ]
+    },
+    {
+      "sourceKey": "itd-efiling-itr1-faqs",
+      "title": "FAQs on filing ITR-1 (Sahaj)",
+      "publisher": "Income Tax Department, Government of India (e-Filing portal)",
+      "url": "https://www.incometax.gov.in/iec/foportal/help/e-filing-itr1-form-sahaj-faq",
+      "authorityTier": "official_guidance",
+      "sourceDate": null,
+      "effectiveFrom": null,
+      "effectiveTo": null,
+      "retrievedAt": "2026-10-03T12:28:22Z",
+      "status": "active",
+      "file": "sources/itd-efiling-itr1-faqs.txt",
+      "sha256": "b1c80d7928297c803c2f50a75faa03b7328217c6d72ef7323aa4824a1ab211a7",
+      "notes": "The page shows no review date and is partly written for AY 2025-26. Only answers that are not tied to an assessment year are taken: documents for filing, advance tax, self-assessment tax, allowances and perquisites, filing when tax was deducted, and refunds. The advance-tax instalment table is left out (SmartCA has no reviewed source for deadlines). Text extracted verbatim; only the curator's headings were added.",
+      "sections": [
+        {
+          "heading": "Documents needed to file ITR-1",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "itr",
+            "itr-1",
+            "form-16",
+            "ais",
+            "documents"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "What is advance tax",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "advance-tax",
+            "tds"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Self-assessment tax",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "self-assessment-tax"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Allowances and perquisites",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "salary",
+            "allowances",
+            "perquisites"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Filing a return when tax was deducted at source",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "tds",
+            "returns"
+          ],
+          "verificationStatus": "primary_verified"
+        },
+        {
+          "heading": "Refund of excess tax",
+          "sectionRef": null,
+          "regime": "both",
+          "topics": [
+            "refund"
           ],
           "verificationStatus": "primary_verified"
         }

@@ -12,9 +12,12 @@
 import { parseIsoDate } from "../date-parse";
 
 export class ToolArgumentError extends Error {
-  constructor(message: string) {
+  /** True when a field the tool does not accept was sent (for example a user id): never treated as a harmless slip. */
+  readonly unknownField: boolean;
+  constructor(message: string, unknownField = false) {
     super(message);
     this.name = "ToolArgumentError";
+    this.unknownField = unknownField;
   }
 }
 
@@ -57,7 +60,7 @@ export function shown(name: string): string {
 /** Rejects any field not on the allow-list, naming it (clipped: see `shown`). */
 function onlyFields(record: Record<string, unknown>, allowed: readonly string[], where: string): void {
   for (const key of Object.keys(record)) {
-    if (!allowed.includes(key)) throw new ToolArgumentError(`${where}: the field "${shown(key)}" is not accepted.`);
+    if (!allowed.includes(key)) throw new ToolArgumentError(`${where}: the field "${shown(key)}" is not accepted.`, true);
   }
 }
 
@@ -93,7 +96,8 @@ function carriesPersonalDetail(question: string): boolean {
   return EMAIL_LIKE.test(question) || PAN_SHAPE.test(question) || LONG_NUMBER.test(question) || (question.match(FIGURE)?.length ?? 0) > MAX_QUESTION_FIGURES;
 }
 
-export type SearchTaxLawArgs = { question: string; assessmentYear: string; sectionRef?: string };
+/** assessmentYear null: the tool uses the newest year the engine supports (the corpus year). A question naming another year is still refused by retrieval. */
+export type SearchTaxLawArgs = { question: string; assessmentYear: string | null; sectionRef?: string };
 
 export function readSearchTaxLawArgs(args: unknown): SearchTaxLawArgs {
   const record = objectOf(args, "search_tax_law arguments");
@@ -106,11 +110,11 @@ export function readSearchTaxLawArgs(args: unknown): SearchTaxLawArgs {
     throw new ToolArgumentError("The question looks like it carries personal details (an email address, a PAN-shaped code, a number of 9 or more digits, or many figures). Ask the tax-law question in general terms, and use the other tools for the person's own figures.");
   }
   const assessmentYear = record.assessmentYear;
-  if (typeof assessmentYear !== "string" || !ASSESSMENT_YEAR_SHAPE.test(assessmentYear)) {
-    throw new ToolArgumentError('assessmentYear is required, for example "2026-27".');
+  if (assessmentYear !== undefined && (typeof assessmentYear !== "string" || !ASSESSMENT_YEAR_SHAPE.test(assessmentYear))) {
+    throw new ToolArgumentError('assessmentYear must look like "2026-27".');
   }
   const sectionRef = optionalText(record, "sectionRef", MAX_SECTION_REF_CHARS);
-  return { question, assessmentYear, ...(sectionRef === null ? {} : { sectionRef }) };
+  return { question, assessmentYear: assessmentYear ?? null, ...(sectionRef === null ? {} : { sectionRef }) };
 }
 
 // ---------------------------------------------------------------------
@@ -118,7 +122,9 @@ export function readSearchTaxLawArgs(args: unknown): SearchTaxLawArgs {
 // ---------------------------------------------------------------------
 
 export type TransactionFilter = { from: string | null; to: string | null; category: string | null; type: "income" | "expense" | null };
-export type QueryTransactionsArgs = TransactionFilter & { limit: number; includeDescription: boolean };
+/** "date": newest first (the default). "amount": largest first, so "my largest expense" needs no arithmetic from the model. */
+export type TransactionSort = "date" | "amount";
+export type QueryTransactionsArgs = TransactionFilter & { limit: number; includeDescription: boolean; sort: TransactionSort };
 export type FinancialSummaryArgs = { from: string | null; to: string | null };
 
 function readPeriod(record: Record<string, unknown>): { from: string | null; to: string | null } {
@@ -130,7 +136,7 @@ function readPeriod(record: Record<string, unknown>): { from: string | null; to:
 
 export function readQueryTransactionsArgs(args: unknown): QueryTransactionsArgs {
   const record = objectOf(args, "query_transactions arguments");
-  onlyFields(record, ["from", "to", "category", "type", "limit", "includeDescription"], "query_transactions");
+  onlyFields(record, ["from", "to", "category", "type", "limit", "includeDescription", "sort"], "query_transactions");
 
   const type = record.type;
   if (type !== undefined && type !== "income" && type !== "expense") throw new ToolArgumentError('type must be "income" or "expense".');
@@ -140,12 +146,15 @@ export function readQueryTransactionsArgs(args: unknown): QueryTransactionsArgs 
   }
   const includeDescription = record.includeDescription;
   if (includeDescription !== undefined && typeof includeDescription !== "boolean") throw new ToolArgumentError("includeDescription must be true or false.");
+  const sort = record.sort;
+  if (sort !== undefined && sort !== "date" && sort !== "amount") throw new ToolArgumentError('sort must be "date" or "amount".');
   return {
     ...readPeriod(record),
     category: optionalText(record, "category", MAX_CATEGORY_CHARS),
     type: type ?? null,
     limit: limit ?? DEFAULT_TRANSACTION_LIMIT,
     includeDescription: includeDescription ?? false,
+    sort: sort ?? "date",
   };
 }
 
@@ -153,6 +162,16 @@ const dayNumber = (iso: string): number => {
   const [year, month, day] = iso.split("-").map(Number);
   return Date.UTC(year, month - 1, day) / 86_400_000;
 };
+
+/** get_saved_tax_computation: an optional assessment year, nothing else. */
+export function readSavedTaxComputationArgs(args: unknown): { assessmentYear: string | null } {
+  const record = objectOf(args, "get_saved_tax_computation arguments");
+  onlyFields(record, ["assessmentYear"], "get_saved_tax_computation");
+  const year = record.assessmentYear;
+  if (year === undefined) return { assessmentYear: null };
+  if (typeof year !== "string" || !ASSESSMENT_YEAR_SHAPE.test(year)) throw new ToolArgumentError('assessmentYear must look like "2026-27".');
+  return { assessmentYear: year };
+}
 
 /**
  * Either no period (the tool then applies defaultSummaryPeriod) or BOTH ends, at most MAX_SUMMARY_RANGE_DAYS apart.

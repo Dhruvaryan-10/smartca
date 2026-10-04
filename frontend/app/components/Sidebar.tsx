@@ -2,62 +2,79 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconSummary, IconLedger, IconTax, IconVault, IconAsk, IconClose } from "./ui/Icons";
+import { PRIMARY_NAV, activeNavIndex } from "./navigation";
+import { IconClose } from "./ui/Icons";
+import { Wordmark } from "./ui/Wordmark";
 
-// Conceptual primary nav (Phase 2). Existing routes map onto it rather
-// than inventing new ones, except Vault, which has no existing analog
-// and is a deliberate coming-soon placeholder (see app/vault/page.tsx).
-const NAV = [
-  { name: "Summary", href: "/dashboard", Icon: IconSummary, match: (p: string) => p === "/dashboard" },
-  { name: "Ledger", href: "/income", Icon: IconLedger, match: (p: string) => ["/income", "/expenses", "/reports"].includes(p) },
-  { name: "Tax", href: "/taxes", Icon: IconTax, match: (p: string) => p === "/taxes" },
-  { name: "Vault", href: "/vault", Icon: IconVault, match: (p: string) => p === "/vault" },
-  { name: "Ask", href: "/insights", Icon: IconAsk, match: (p: string) => p === "/insights" },
-];
-
-// Quiet by design: same surface as the page, no fill on inactive items,
-// and the accent appears in exactly one place — the active item's icon.
-// Position and a subtle fill carry "you are here"; colour only confirms it.
+// Quiet by design: the app's frame layer (chrome), no fill on inactive
+// items. "You are here" is a single teal-tinted fill that slides between items when
+// the destination changes (instant under reduced motion), plus the
+// accent on the current item's icon and aria-current.
+//
+// `rail` is the fixed desktop sidebar; `drawer` is the mobile instance,
+// with 44px touch targets and a visible close button.
 export default function Sidebar({
+  variant = "rail",
   onNavigate,
   onClose,
 }: {
-  onNavigate?: () => void;
-  /** Present only for the mobile drawer instance — renders a visible close affordance. */
+  variant?: "rail" | "drawer";
+  onNavigate?: (href: string) => void;
   onClose?: () => void;
 }) {
   const pathname = usePathname();
+  const active = activeNavIndex(pathname);
+  const drawer = variant === "drawer";
 
   return (
-    <div className="flex h-full w-64 flex-col bg-background px-3 py-4 lg:w-60">
-      <div className="flex h-9 items-center justify-between px-2.5">
-        <span className="text-[15px] font-semibold tracking-tight text-foreground">SmartCA</span>
+    <div
+      className={`flex h-full flex-col bg-surface-chrome px-3 pb-4 ${drawer ? "w-full pt-2" : "w-(--sidebar-width) pt-3"}`}
+    >
+      <div className="flex h-11 items-center justify-between pl-2.5">
+        <Link
+          href="/dashboard"
+          onClick={() => onNavigate?.("/dashboard")}
+          aria-label="SmartCA, go to Summary"
+          className="rounded-control focus-visible:focus-ring"
+        >
+          <Wordmark />
+        </Link>
         {onClose && (
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close navigation menu"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] text-muted-foreground transition-colors hover:bg-inset hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label="Close navigation"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-control text-foreground-muted transition-colors duration-(--duration-fast) ease-standard hover:bg-surface-sunken hover:text-foreground focus-visible:focus-ring"
           >
             <IconClose />
           </button>
         )}
       </div>
 
-      <nav aria-label="Primary" className="mt-6 flex flex-col gap-0.5">
-        {NAV.map(({ name, href, Icon, match }) => {
-          const active = match(pathname ?? "");
+      <nav
+        aria-label="Primary"
+        className={`relative mt-6 flex flex-col gap-(--nav-gap) [--nav-gap:2px] ${drawer ? "[--nav-item:2.75rem]" : "[--nav-item:2.25rem]"}`}
+      >
+        {active >= 0 && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-x-0 top-0 h-(--nav-item) rounded-control bg-surface-selected transition-transform duration-(--duration-normal) ease-standard"
+            style={{ transform: `translateY(calc(${active} * (var(--nav-item) + var(--nav-gap))))` }}
+          />
+        )}
+        {PRIMARY_NAV.map(({ name, href, Icon }, index) => {
+          const current = index === active;
           return (
             <Link
               key={href}
               href={href}
-              onClick={onNavigate}
-              aria-current={active ? "page" : undefined}
-              className={`flex h-9 items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 text-[13.5px] font-medium transition-colors duration-150 ease-[var(--ease-standard)]
-                focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
-                ${active ? "bg-inset text-foreground" : "text-muted-foreground hover:bg-inset/60 hover:text-foreground"}`}
+              onClick={() => onNavigate?.(href)}
+              aria-current={current ? "page" : undefined}
+              className={`relative flex h-(--nav-item) items-center gap-3 rounded-control px-2.5 text-body font-medium transition-colors duration-(--duration-fast) ease-standard focus-visible:focus-ring ${
+                current ? "text-foreground" : "text-foreground-muted hover:bg-surface-hover hover:text-foreground"
+              }`}
             >
-              <Icon className={active ? "text-primary" : "text-muted-foreground"} />
+              <Icon className={current ? "text-primary" : undefined} />
               {name}
             </Link>
           );

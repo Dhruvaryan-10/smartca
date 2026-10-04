@@ -1,0 +1,219 @@
+/* SmartCA landing page. Tokens come from globals.css; nothing here defines a colour of its own.
+
+   Motion model: everything is scroll-linked CSS (scroll and view timelines), compositor-friendly (transform and opacity), and
+   only runs at desktop widths when the person has not asked for reduced motion and the browser supports scroll-driven
+   animation. Without any of those, the page shows the finished, assembled composition: no content waits for scrolling. */
+
+.landing-header {
+  border-bottom: 1px solid transparent;
+}
+
+/* The signature sequence: a SmartCA Summary that begins scattered in depth — the pieces of someone's finances — and assembles
+   into the product as the hero scrolls. Desktop only; phones and tablets get the assembled view. */
+.hero-stage {
+  perspective: 1800px;
+  perspective-origin: 60% 40%;
+}
+.hero-surface,
+.hero-piece {
+  transform-style: preserve-3d;
+}
+
+/* Steps beside the composition light up in order as it assembles. They are always readable; only emphasis changes. */
+.hero-step-dot {
+  background: var(--surface-sunken);
+}
+
+@keyframes landing-header-edge {
+  to {
+    border-bottom-color: var(--border);
+    box-shadow: var(--shadow-raised);
+  }
+}
+@keyframes hero-surface-settle {
+  from {
+    transform: rotateX(18deg) rotateY(-20deg) rotateZ(4deg) scale(0.9);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes hero-dock {
+  from {
+    transform: var(--from);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes hero-step-on {
+  from {
+    color: var(--foreground-muted);
+  }
+  to {
+    color: var(--foreground);
+  }
+}
+@keyframes hero-dot-on {
+  from {
+    background: var(--surface-sunken);
+    transform: scale(0.8);
+  }
+  to {
+    background: var(--primary);
+    transform: none;
+  }
+}
+@keyframes hero-progress {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes landing-drift {
+  from {
+    transform: translateY(28px);
+  }
+  to {
+    transform: translateY(-28px);
+  }
+}
+@keyframes flow-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.hero-progress-fill {
+  transform-origin: top;
+  transform: scaleY(1);
+}
+
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .landing-header {
+      animation: landing-header-edge linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 96px;
+    }
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+    .hero-story {
+      view-timeline: --hero block;
+      height: 250vh;
+    }
+    .hero-sticky {
+      position: sticky;
+      top: 0;
+      height: 100svh;
+    }
+    .hero-surface {
+      animation: hero-surface-settle linear both;
+      animation-timeline: --hero;
+      animation-range: contain 0% contain 62%;
+    }
+    .hero-piece {
+      animation: hero-dock var(--ease-entrance) both;
+      animation-timeline: --hero;
+      animation-range: contain var(--a) contain var(--b);
+    }
+    .hero-step {
+      animation: hero-step-on linear both;
+      animation-timeline: --hero;
+      animation-range: contain var(--a) contain var(--b);
+    }
+    .hero-step .hero-step-dot {
+      animation: hero-dot-on linear both;
+      animation-timeline: --hero;
+      animation-range: contain var(--a) contain var(--b);
+    }
+    .hero-progress-fill {
+      animation: hero-progress linear both;
+      animation-timeline: --hero;
+      animation-range: contain 4% contain 78%;
+    }
+    .landing-drift {
+      animation: landing-drift linear both;
+      animation-timeline: view();
+      animation-range: cover 0% cover 100%;
+    }
+    .flow-path {
+      stroke-dasharray: 1;
+      animation: flow-draw linear both;
+      animation-timeline: view();
+      animation-range: entry 10% cover 45%;
+    }
+  }
+}
+
+/* Chapter reveals (every width). After the hero, each chapter is revealed as it is reached: its label first, then the headline,
+   the copy, the product visual and finally the checklist. Each element runs on its own view timeline and completes within a few
+   hundred pixels of entering, so nothing waits on a long scroll; `--s` offsets an element's start to set the order. Only opacity
+   and a short rise (plus a very slight scale for visuals) move. Without scroll-driven animation support, or with reduced motion,
+   none of this applies and every element is simply visible. */
+@keyframes chapter-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes chapter-visual-in {
+  from {
+    opacity: 0;
+    transform: translateY(36px) scale(0.975);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .chapter-in {
+      animation: chapter-in var(--ease-entrance) both;
+      animation-timeline: view();
+      animation-range: entry var(--s, 0px) entry calc(var(--s, 0px) + 200px);
+    }
+    .chapter-visual {
+      animation: chapter-visual-in var(--ease-entrance) both;
+      animation-timeline: view();
+      animation-range: entry calc(var(--s, 0px) + 60px) entry calc(var(--s, 0px) + 340px);
+    }
+  }
+  @media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+    /* Side by side, a visual's top sits above its text; a later start keeps it settling just after the words. */
+    .chapter-visual {
+      animation-range: entry calc(var(--s, 0px) + 160px) entry calc(var(--s, 0px) + 460px);
+    }
+  }
+}
+
+/* Interactive cues on the page's own links: a calm underline that grows from the left. */
+.landing-link {
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0% 1px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  transition: background-size var(--duration-normal) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.landing-link:hover {
+  background-size: 100% 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-link {
+    transition: none;
+  }
+}

@@ -1,32 +1,36 @@
 import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 
-type Variant = "primary" | "secondary" | "ghost" | "destructive";
+type Variant = "primary" | "secondary" | "outline" | "ghost" | "destructive";
 type Size = "sm" | "md" | "lg";
 
 // Primary is the SmartCA accent and should appear once per view. Secondary
-// sits on the inset surface so it reads as a control without needing a
-// border.
+// sits on the sunken surface so it reads as a control without a border;
+// outline is the quiet alternative beside a primary. Hover steps the fill
+// (never a brightness filter, which washes out in dark mode) and a press
+// settles the button slightly, within the instant duration.
 const VARIANT_CLASSES: Record<Variant, string> = {
-  primary: "bg-primary text-primary-foreground hover:brightness-110 active:brightness-95",
-  secondary: "bg-inset text-foreground hover:bg-border active:bg-border",
-  ghost: "text-muted-foreground hover:bg-inset hover:text-foreground",
-  destructive: "bg-destructive text-destructive-foreground hover:brightness-110 active:brightness-95",
+  primary: "bg-primary text-primary-foreground hover:bg-primary-hover",
+  secondary: "bg-secondary text-foreground hover:bg-border",
+  outline: "border border-field-border text-foreground hover:bg-surface-sunken",
+  ghost: "text-foreground-muted hover:bg-surface-sunken hover:text-foreground",
+  destructive: "bg-danger text-danger-foreground hover:bg-danger-hover",
 };
 
 // Compact by default (32/36px) for dense app surfaces; `lg` (44px) is for
 // touch-first, single-purpose forms like sign-in.
 const SIZE_CLASSES: Record<Size, string> = {
-  sm: "h-8 px-3 text-[13px]",
-  md: "h-9 px-4 text-sm",
-  lg: "h-11 px-5 text-[15px]",
+  sm: "h-8 px-3 text-label",
+  md: "h-9 px-4 text-body",
+  lg: "h-11 px-5 text-body-lg",
 };
 
 export function buttonClasses(variant: Variant = "primary", size: Size = "md", className = ""): string {
-  return `inline-flex items-center justify-center gap-2 rounded-[var(--radius-sm)] font-medium whitespace-nowrap
-    transition-[background-color,color,filter] duration-150 ease-[var(--ease-standard)]
-    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background
-    disabled:opacity-50 disabled:cursor-not-allowed
+  return `inline-flex items-center justify-center gap-2 rounded-control font-medium whitespace-nowrap select-none
+    transition-[background-color,color,border-color,transform] duration-(--duration-fast) ease-standard
+    active:scale-98 active:duration-(--duration-instant)
+    focus-visible:focus-ring
+    disabled:pointer-events-none disabled:opacity-50
     ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`;
 }
 

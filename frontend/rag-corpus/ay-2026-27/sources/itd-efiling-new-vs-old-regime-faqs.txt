@@ -1,0 +1,44 @@
+# FAQs on New Tax vs Old Tax Regime
+
+## New tax regime as the default regime, and opting out
+The Finance Act 2023 has amended the provisions of Section 115BAC w.e.f AY 2024-25 to make new tax regime the default tax regime for the assessees being Individual, HUF, AOP (not being co- operative societies), BOI or Artificial Juridical Person. However, the eligible taxpayers have the option to opt out of new tax regime and choose to be taxed under old tax regime. The old tax regime refers to the system of income tax calculation and slabs that existed before the introduction of the new tax regime.
+
+In case of "non-business cases", option to choose the regime can be exercised every year directly in the ITR to be filed on or before the due date specified under section 139(1).
+
+In case of taxpayers having “income from business and profession” and who want to opt out of new tax regime, the assessee would be required to furnish Form 10-IEA on or before the due date u/s 139(1) for furnishing the return of income. Also, for the purpose of withdrawal of such option i.e. opting out of old tax regime shall also be done by way of furnishing Form No.10-IEA. New tax regime is the default tax regime. However, taxpayers can opt for the old regime.
+
+## Difference between the old and new tax regime
+- What is the difference between the old and new tax regime?
+
+Ans: The tax slabs and rates are different in old and new tax regimes. Various deductions and exemptions are allowed in Old tax regime. The new regime offers lower rates of taxes but permits limited deductions and exemptions.
+
+## Choosing between the regimes
+- Which is better between the old tax regime and the new tax regime?
+
+The option to choose between two regimes may vary from person to person. It is advisable to do a comparative evaluation and analysis under both regimes and then choose as per requirement. Taxpayers can broadly estimate and compare tax liability under the new and the old tax regime using Income and Tax Calculator on the Income Tax Portal.
+
+## Telling the employer which regime
+- Is it necessary for the employee to intimate the tax regime to the employer?
+
+Yes, the employee has to intimate the employer regarding his intended tax regime during the year. If the employee does not make an intimation, it shall be presumed that the employee continues to be in the default tax regime and has not exercised the option to opt out of the new tax regime. Thus, the employer shall deduct tax in accordance with the rates provided under section 115BAC.
+
+However, the intimation made to the employer would not amount to exercising the option in sub- section (6) of section 115BAC for opting out of the new tax regime. The employee shall be required to do so separately before the due date specified under section 139(1) for filing of return of income.
+
+## HRA exemption in the new regime
+- I am a salaried taxpayer. Can I claim HRA exemption in the new regime?
+
+Under the old tax regime, House Rent Allowance (HRA) is exempted under section 10(13A) for salaried individuals. However, this exemption is not available in the new tax regime.
+
+## Chapter VI-A deductions in the new regime
+- In the new tax regime can I claim deductions under chapter-VIA like section 80C, 80D, 80DD, 80G etc. while filing the ITR for AY 2024-25?
+
+In new tax regime, Chapter-VIA deductions cannot be claimed, except deduction u/s 80CCD(2)/80CCH/80JJAA as per the provision of Section 115BAC of the Income Tax Act, 1961. In case, taxpayer wants to claim any deductions (as applicable), then taxpayer needs to choose the old tax regime by selecting “Yes” option in ITR 1 / ITR 2 (or) “Yes, within due date” option in ITR 3 / ITR 4 / ITR 5 in the field provided for “opting out option” under Schedule ‘Personal Information’ or ‘Part- A General’ in the respective ITR.
+
+in ITR 1 / ITR 2
+
+Or in ITR 3 and ITR 4
+
+## Interest on a self-occupied property in the new regime
+- Can I claim deduction of Interest on borrowed capital of Rs. 2,00,000/- for self occupied property under Income from House Property in the new tax regime?
+
+In the new tax regime, “Interest on borrowed capital for Self-occupied property” is not allowed as a deduction from Income from House property as per the provision of Section 115BAC of the Act, 1961. In case, the Taxpayer wants to claim deduction of interest on borrowed capital for SOP, then taxpayer must choose ‘Old Tax Regime’ by selecting “Yes” in ITR 1 / ITR 2 or “Yes, within due date” option in ITR 3 / ITR 4 / ITR 5 in the field provided for “opting out option” in the ITR Form.

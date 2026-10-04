@@ -34,6 +34,7 @@ import { EGRESS_FIELD_CLASSES } from "../lib/assistant/profiles";
 import { fingerprintInventory } from "../lib/assistant/egress-disclosure";
 import type { EgressFieldClass } from "../lib/assistant/tool-contract";
 import { deleteTestUser, makeTestUser } from "./helpers";
+import { presentForModel } from "../lib/assistant/model-view";
 
 const KEY = "test-key-NOT-A-REAL-SECRET-0009";
 const ENDPOINT = "https://provider.invalid/v1/chat/completions";
@@ -216,7 +217,7 @@ test("the complete path with the real driver: a tool round-trip over the Chat Co
     assert.equal(visible.tax_corpus_text, false);
     const raw = await assistantTools.calculate_tax(u, TAX_ARGS);
     assert.equal(raw.status, "ok");
-    assert.equal(second[3].content, JSON.stringify(filterToolResult("calculate_tax", raw, visible)));
+    assert.equal(second[3].content, JSON.stringify(presentForModel(filterToolResult("calculate_tax", raw, visible))));
     // No corpus-text field reached the model in either request (the only tool that returns any was never offered).
     for (const call of provider.seen) assert.doesNotMatch(String(call.init.body), /"evidence"|"corpusVersion"|"quote"|"sourceKey"/);
 

@@ -32,7 +32,7 @@
 import { META_ID, ModelProviderError, ModelRequestError, MAX_MODEL_TIMEOUT_MS } from "./model";
 import type { ModelAdapter, ModelCallOptions, ModelRequest } from "./model";
 import { AssistantConfigError, MAX_MODEL_OUTPUT_TOKENS } from "./config";
-import type { AssistantConfig, ExternalAssistantConfig, Secret } from "./config";
+import type { AssistantConfig, ProviderAssistantConfig, Secret } from "./config";
 
 /** What goes over the wire. The body is the encoded request; the only secret is in the driver's authentication headers. */
 export type ProviderWireRequest = Readonly<{
@@ -71,7 +71,7 @@ export type ProviderDriver = Readonly<{
   transport(request: ProviderWireRequest): Promise<ProviderWireResponse>;
 }>;
 
-type ExternalConfig = ExternalAssistantConfig;
+type ExternalConfig = ProviderAssistantConfig;
 
 /**
  * The external configuration, checked: enabled, env "external", and EXACTLY ONE approved recipient, which is the recipient every call
@@ -79,7 +79,8 @@ type ExternalConfig = ExternalAssistantConfig;
  */
 export function readProviderTarget(config: AssistantConfig): { config: ExternalConfig; recipient: string } {
   if (!config.enabled) throw new AssistantConfigError("assistant_disabled");
-  if (config.env !== "external") throw new AssistantConfigError("invalid_configuration", ["ASSISTANT_ENV"]);
+  // "local" is the external configuration with a loopback endpoint (docs/decisions/0005): the same target, limits and checks.
+  if (config.env !== "external" && config.env !== "local") throw new AssistantConfigError("invalid_configuration", ["ASSISTANT_ENV"]);
   if (config.approvedRecipients.length !== 1) throw new AssistantConfigError("invalid_configuration", ["MODEL_APPROVED_RECIPIENTS"]);
   // The model id is stated in every response's metadata, which the guard accepts only as a plain identifier (META_ID). MODEL_ID's own
   // shape is wider (it allows "/" and 128 characters), so an id outside META_ID would fail every call: refuse it here, before any call.

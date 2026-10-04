@@ -1,4 +1,4 @@
-// RAG evaluation dataset (rag-evals/ay-2026-27-v1): schema, splits, gold evidence, and the freeze on the test set.
+// RAG evaluation dataset (rag-evals/ay-2026-27-v2, derived from v1 for corpus v2): schema, splits, gold evidence, and the freeze on the test set.
 // No database: everything here is about the files, the shipped corpus, and the rules that keep the evaluation honest.
 //
 // These tests pin the DATASET. They never look at what retrieval returns, so a gold label can never be adjusted to
@@ -30,6 +30,11 @@ const TEST = [
 const MUST_REVIEW = ["reb-01", "reb-02", "c80-01", "c80-03", "ces-02", "sur-02", "sur-03", "sen-03", "sen-04", "ayi-04", "mis-04", "ins-02", "ins-03", "eng-06"];
 const LOW_PRIORITY = ["slb-03", "slb-05", "sen-02", "d80-02", "c80-02", "idx-02"];
 const OWNER_DECISION = ["idx-05"];
+// Dataset v2 (corpus v2): 13 dev-only coverage cases for the new topics, and three cases relabelled answer because corpus v2
+// changes their answer (c80-01 and mis-04 were already must_review; mis-03 becomes so). See rag-evals/ay-2026-27-v2/meta.json.
+const V2_COVERAGE = Array.from({ length: 13 }, (_, i) => `cov-${String(i + 1).padStart(2, "0")}`);
+DEV.push(...V2_COVERAGE);
+MUST_REVIEW.push("mis-03", ...V2_COVERAGE);
 
 const raw = (): RawEvalDataset => structuredClone(loadRawEvalDataset());
 const dataset = loadEvalDataset();
@@ -51,12 +56,13 @@ function issuesOf(mutate: (d: RawEvalDataset) => void): string {
 
 // --- the shipped dataset -------------------------------------------------------------
 
-test("the dataset has 56 cases: 22 dev and 34 test, with the behaviour mix the discovery report designed", () => {
-  assert.equal(dataset.cases.length, 56);
+test("the dataset has 69 cases: 35 dev and 34 test, with the discovery report's mix plus the v2 coverage and relabels", () => {
+  assert.equal(dataset.cases.length, 69);
   assert.deepEqual(sorted(dataset.cases.filter((c) => c.split === "dev").map((c) => c.id)), sorted(DEV));
   assert.deepEqual(sorted(dataset.cases.filter((c) => c.split === "test").map((c) => c.id)), sorted(TEST));
   const count = (b: string) => dataset.cases.filter((c) => c.expectedBehavior === b).length;
-  assert.deepEqual([count("answer"), count("insufficient_evidence"), count("route_to_engine"), count("refuse_out_of_scope")], [21, 22, 8, 5]);
+  // v1: 21 / 22 / 8 / 5. v2: three insufficient_evidence cases relabelled answer, and 13 answer cases added.
+  assert.deepEqual([count("answer"), count("insufficient_evidence"), count("route_to_engine"), count("refuse_out_of_scope")], [37, 19, 8, 5]);
 });
 
 test("no duplicate ids and no duplicate questions (case, spacing and punctuation-insensitive)", () => {
@@ -102,7 +108,7 @@ test("provisional cases are explicitly marked, with a reason, exactly as the dis
     const expected = MUST_REVIEW.includes(c.id) ? "must_review" : LOW_PRIORITY.includes(c.id) ? "low_priority" : "owner_decision";
     assert.equal(c.review.status === "provisional" && c.review.priority, expected, c.id);
   }
-  assert.equal(dataset.cases.length - provisional.length, 35);
+  assert.equal(dataset.cases.length - provisional.length, 34, "v1's 35 gold cases, less mis-03, now provisional");
 });
 
 test("every gold source exists in the shipped corpus and is active, and the dataset names that corpus version", () => {

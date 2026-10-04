@@ -3,130 +3,413 @@
 /* ------------------------------------------------------------------ */
 /* SmartCA design tokens                                               */
 /*                                                                     */
-/* Four surfaces, used sparingly:                                      */
-/*   background  the page                                              */
-/*   card        a grouped region that earns its own surface           */
-/*   elevated    floating layers only (menus, tooltips, drawers)       */
-/*   inset       controls and recessed wells (inputs, chips, hover)    */
-/* Hierarchy comes from type and spacing first; borders are hairlines  */
-/* used only where they separate something real.                       */
+/* Specification: docs/design/ (README.md, tokens.md, motion.md).      */
+/* Change a value here, not in a component. tests/design-tokens.test.ts */
+/* checks every text pairing for contrast in both themes and keeps the */
+/* two dark blocks identical.                                          */
 /*                                                                     */
-/* Colour rules: neutrals carry almost everything. `primary` is the    */
-/* SmartCA accent — primary actions, active navigation, selection and  */
-/* focus only. success/destructive/warning/info encode meaning, never  */
-/* decoration. Contrast of every text pairing below is >= 4.5:1.       */
+/* "Ink on ledger paper": cool, faintly green-grey paper, one deep     */
+/* ledger-ink teal. Neutrals carry almost everything. `primary` is for */
+/* primary actions, current navigation, selection and focus only.      */
+/* success/warning/danger/info each mean exactly one thing.            */
+/*                                                                     */
+/* A layered material system (never a flat white or black page):      */
+/*   surface-chrome    the app's frame (sidebar): the deepest layer    */
+/*   background        the page canvas                                 */
+/*   surface           a grouped region that earns its own sheet       */
+/*   surface-elevated  floating layers only (menus, popovers, dialogs) */
+/*   surface-sunken    controls and recessed wells (inputs)            */
+/*   surface-hover     pointer feedback on rows and items              */
+/*   surface-selected  the current navigation item (a quiet teal tint) */
+/* Adjacent layers are kept visibly distinct; a test enforces it.      */
 /*                                                                     */
 /* Manual override via <html data-theme="light|dark">, falling back to */
 /* the OS preference when no override is set.                          */
 /* ------------------------------------------------------------------ */
+
+/* Light: "ledger paper" */
 :root {
-  --background: #f4f3ef;
-  --foreground: #1c1b19;
-  --muted-foreground: #66625b;
-  --card: #fcfbf9;
-  --card-foreground: #1c1b19;
-  --elevated: #ffffff;
-  --elevated-foreground: #1c1b19;
-  --inset: #ecebe6;
-  --border: #e3e1db;
-  --field-border: #8c8880;
-  --primary: #0b6470;
-  --primary-foreground: #f5fbfb;
-  --secondary: #ecebe6;
-  --secondary-foreground: #1c1b19;
-  --destructive: #b42318;
-  --destructive-foreground: #ffffff;
-  --success: #26703a;
-  --warning: #8a5700;
-  --info: #2b5f9e;
-  --ring: #0b6470;
+  color-scheme: light;
 
-  --radius-sm: 0.5rem;
-  --radius-md: 0.625rem;
-  --radius-lg: 0.75rem;
+  --background: #eceee9;
+  --surface: #f8f9f6;
+  --surface-elevated: #ffffff;
+  --surface-sunken: #e0e5de;
+  --surface-selected: #cbe0dc;
+  --surface-hover: #d8ded6;
+  --surface-chrome: #e3e7e0;
+  --foreground: #17201c;
+  --foreground-secondary: #3c4641;
+  --foreground-muted: #535c57;
+  --border: #d1d7d0;
+  --divider: #dde2dc;
+  --border-strong: #b6bfb7;
+  --field-border: #717973;
+  --primary: #0b5d68;
+  --primary-hover: #084a53;
+  --primary-foreground: #f4faf9;
+  --success: #24663c;
+  --warning: #7f5600;
+  --danger: #b3261e;
+  --danger-foreground: #ffffff;
+  --info: #2a5b9a;
+  --income: #1e6b45;
+  --expense: #a33a25;
+  --tax: #7a5800;
+  --chart-4: #4c5e7c;
+  --chart-5: #7a5a2e;
+  --chart-6: #5e6b3a;
+  --overlay: rgb(23 32 28 / 0.32);
 
-  --shadow-sm: none;
-  --shadow-md: 0 8px 24px rgba(28, 27, 25, 0.1), 0 0 0 1px rgba(28, 27, 25, 0.04);
-
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --shadow-raised: 0 1px 2px rgb(23 32 28 / 0.06), 0 2px 8px rgb(23 32 28 / 0.04);
+  --shadow-floating: 0 8px 24px rgb(23 32 28 / 0.1), 0 0 0 1px rgb(23 32 28 / 0.04);
+  --shadow-modal: 0 24px 64px rgb(23 32 28 / 0.18), 0 0 0 1px rgb(23 32 28 / 0.05);
 }
 
+/* Dark: "night ledger". Keep identical to the media-query block below. */
 :root[data-theme="dark"] {
-  --background: #0e0e0d;
-  --foreground: #ecebe7;
-  --muted-foreground: #9a968e;
-  --card: #161615;
-  --card-foreground: #ecebe7;
-  --elevated: #1e1e1c;
-  --elevated-foreground: #ecebe7;
-  --inset: #242422;
-  --border: #2a2a27;
-  --field-border: #77736b;
-  --primary: #63bdb8;
-  --primary-foreground: #06201f;
-  --secondary: #242422;
-  --secondary-foreground: #ecebe7;
-  --destructive: #ef7167;
-  --destructive-foreground: #2a0b08;
-  --success: #5fbf7a;
-  --warning: #dba845;
-  --info: #7fa9e3;
-  --ring: #63bdb8;
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  color-scheme: dark;
+
+  --background: #141b19;
+  --surface: #1a2320;
+  --surface-elevated: #222c29;
+  --surface-sunken: #252f2c;
+  --surface-selected: #1e3a38;
+  --surface-hover: #1b2321;
+  --surface-chrome: #0f1513;
+  --foreground: #e6ece9;
+  --foreground-secondary: #c3ccc7;
+  --foreground-muted: #9ca6a0;
+  --border: #2f3a37;
+  --divider: #242e2b;
+  --border-strong: #3e4946;
+  --field-border: #79837e;
+  --primary: #6cc2ba;
+  --primary-hover: #8ad0c9;
+  --primary-foreground: #05201e;
+  --success: #6cc48a;
+  --warning: #ddb04e;
+  --danger: #f08a80;
+  --danger-foreground: #2a0b08;
+  --info: #8db3e8;
+  --income: #5cc98e;
+  --expense: #f2876f;
+  --tax: #e3ba52;
+  --chart-4: #9aabc9;
+  --chart-5: #c9a577;
+  --chart-6: #a9b67f;
+  --overlay: rgb(0 0 0 / 0.6);
+
+  --shadow-raised: 0 0 0 1px rgb(255 255 255 / 0.05);
+  --shadow-floating: 0 8px 24px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05);
+  --shadow-modal: 0 24px 64px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="dark"]) {
-    --background: #0e0e0d;
-    --foreground: #ecebe7;
-    --muted-foreground: #9a968e;
-    --card: #161615;
-    --card-foreground: #ecebe7;
-    --elevated: #1e1e1c;
-    --elevated-foreground: #ecebe7;
-    --inset: #242422;
-    --border: #2a2a27;
-    --field-border: #77736b;
-    --primary: #63bdb8;
-    --primary-foreground: #06201f;
-    --secondary: #242422;
-    --secondary-foreground: #ecebe7;
-    --destructive: #ef7167;
-    --destructive-foreground: #2a0b08;
-    --success: #5fbf7a;
-    --warning: #dba845;
-    --info: #7fa9e3;
-    --ring: #63bdb8;
-    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --background: #141b19;
+    --surface: #1a2320;
+    --surface-elevated: #222c29;
+    --surface-sunken: #252f2c;
+    --surface-selected: #1e3a38;
+    --surface-hover: #1b2321;
+    --surface-chrome: #0f1513;
+    --foreground: #e6ece9;
+    --foreground-secondary: #c3ccc7;
+    --foreground-muted: #9ca6a0;
+    --border: #2f3a37;
+    --divider: #242e2b;
+    --border-strong: #3e4946;
+    --field-border: #79837e;
+    --primary: #6cc2ba;
+    --primary-hover: #8ad0c9;
+    --primary-foreground: #05201e;
+    --success: #6cc48a;
+    --warning: #ddb04e;
+    --danger: #f08a80;
+    --danger-foreground: #2a0b08;
+    --info: #8db3e8;
+    --income: #5cc98e;
+    --expense: #f2876f;
+    --tax: #e3ba52;
+    --chart-4: #9aabc9;
+    --chart-5: #c9a577;
+    --chart-6: #a9b67f;
+    --overlay: rgb(0 0 0 / 0.6);
+
+    --shadow-raised: 0 0 0 1px rgb(255 255 255 / 0.05);
+    --shadow-floating: 0 8px 24px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.05);
+    --shadow-modal: 0 24px 64px rgb(0 0 0 / 0.6), 0 0 0 1px rgb(255 255 255 / 0.06);
+  }
+}
+
+/* Increased contrast: stronger hairlines and secondary text. Same
+   specificity as the theme blocks, declared later, so it wins in both. */
+@media (prefers-contrast: more) {
+  :root:is([data-theme], :not([data-theme])) {
+    --border: var(--field-border);
+    --foreground-muted: color-mix(in srgb, var(--foreground) 80%, var(--background));
+  }
+}
+
+/* Theme-independent tokens. Derived values resolve against whichever
+   theme block applies, so they are declared once. */
+:root {
+  /* Roles derived from the palette */
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--foreground);
+  --accent: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  --accent-foreground: var(--foreground);
+  --ring: var(--primary);
+  --danger-hover: color-mix(in srgb, var(--danger) 86%, var(--foreground));
+  --border-focus: var(--ring);
+  --border-active: var(--primary);
+  --error: var(--danger);
+  --shadow-flat: none;
+  --success-soft: color-mix(in srgb, var(--success) 10%, var(--surface));
+  --warning-soft: color-mix(in srgb, var(--warning) 10%, var(--surface));
+  --danger-soft: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  --info-soft: color-mix(in srgb, var(--info) 10%, var(--surface));
+
+  /* Financial colour language. Accents on neutral surfaces: figures,
+     marks, small tints. Never a large fill, never the only signal (a
+     sign, a word or a label always travels with the colour). */
+  --income-soft: color-mix(in srgb, var(--income) 10%, var(--surface));
+  --expense-soft: color-mix(in srgb, var(--expense) 10%, var(--surface));
+  --tax-soft: color-mix(in srgb, var(--tax) 12%, var(--surface));
+  --assistant: var(--primary);
+  --assistant-foreground: var(--primary-foreground);
+  --assistant-soft: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  --assistant-halo: color-mix(in srgb, var(--primary) 18%, transparent);
+
+  /* Charts: series 1 ink (solid), series 2 pencil (dashed). 3+ series
+     only when unavoidable, and never without labels. */
+  --chart-1: var(--foreground);
+  --chart-2: var(--foreground-muted);
+  --chart-3: var(--primary);
+  --chart-grid: var(--border);
+  --chart-income: var(--income);
+  --chart-expense: var(--expense);
+  --chart-tax: var(--tax);
+
+  /* Legacy names. Existing components use these; new code uses the
+     canonical names above. Removed once every use has migrated. */
+  --muted-foreground: var(--foreground-muted);
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --elevated: var(--surface-elevated);
+  --elevated-foreground: var(--foreground);
+  --inset: var(--surface-sunken);
+  --destructive: var(--danger);
+  --destructive-foreground: var(--danger-foreground);
+  --shadow-sm: var(--shadow-flat);
+  --shadow-md: var(--shadow-floating);
+
+  /* Radius: precise, not soft. Controls are 6px; panels 12px. */
+  --radius-xs: 0.25rem; /* 4px  badges, checkboxes, chips */
+  --radius-sm: 0.375rem; /* 6px  buttons, inputs, selects, nav items */
+  --radius-md: 0.5rem; /* 8px  menus, popovers, tooltips, callouts */
+  --radius-lg: 0.75rem; /* 12px panels */
+  --radius-control: var(--radius-sm);
+  --radius-panel: var(--radius-lg);
+  --radius-dialog: 1rem; /* 16px dialogs, sheets */
+  --radius-pill: 9999px; /* switch tracks, avatars, progress */
+
+  /* Spacing: the Tailwind 4px scale (p-1 = 4px) is the spacing scale.
+     These mirror it for hand-written CSS. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  /* Page rhythm */
+  --space-section: 3rem; /* between page sections */
+  --space-block: 2rem; /* between blocks inside a section */
+  --space-stack: 0.75rem; /* heading to its content */
+  /* Page gutters: 16px on phones, 32px from 640px (see media query). */
+  --page-gutter: 1rem;
+  /* Dense data */
+  --row-height: 2.75rem; /* 44px table and list rows */
+  --row-height-compact: 2.25rem; /* 36px compact tables (pointer only) */
+  --cell-padding-x: 0.75rem;
+
+  /* Layout */
+  --container-data: 72rem;
+  --container-reading: 44rem;
+  --container-form: 36rem;
+  --sidebar-width: 15rem;
+  --header-height: 3.5rem;
+
+  /* Layers */
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-fab: 30;
+  --z-drawer: 40;
+  --z-dialog: 50;
+  --z-toast: 60;
+
+  /* Motion. Durations collapse under reduced motion (see below). */
+  --duration-instant: 80ms; /* press feedback */
+  --duration-fast: 140ms; /* hover, focus, colour changes */
+  --duration-normal: 200ms; /* menus, page settle, drawer, indicators */
+  --duration-slow: 320ms; /* dialogs, sheets, the settled-figure rule */
+  --duration-reveal: 480ms; /* one-time chart and bar entrances */
+  --duration-wash: 900ms; /* recalculated-figure highlight fade */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1); /* state changes in place */
+  --ease-entrance: cubic-bezier(0.05, 0.7, 0.1, 1); /* arriving: decelerate */
+  --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15); /* leaving: accelerate */
+  --ease-emphasized: cubic-bezier(0.32, 0.72, 0, 1); /* large surfaces: sheets, dialogs */
+}
+
+@media (min-width: 640px) {
+  :root {
+    --page-gutter: 2rem;
   }
 }
 
 @theme inline {
+  /* Canonical colour roles */
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-chrome: var(--surface-chrome);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-selected: var(--surface-selected);
   --color-foreground: var(--foreground);
+  --color-foreground-secondary: var(--foreground-secondary);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-border: var(--border);
+  --color-divider: var(--divider);
+  --color-border-focus: var(--border-focus);
+  --color-border-active: var(--border-active);
+  --color-border-strong: var(--border-strong);
+  --color-field-border: var(--field-border);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-danger-hover: var(--danger-hover);
+  --color-error: var(--error);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-income: var(--income);
+  --color-income-soft: var(--income-soft);
+  --color-expense: var(--expense);
+  --color-expense-soft: var(--expense-soft);
+  --color-tax: var(--tax);
+  --color-tax-soft: var(--tax-soft);
+  --color-assistant: var(--assistant);
+  --color-assistant-foreground: var(--assistant-foreground);
+  --color-assistant-soft: var(--assistant-soft);
+  --color-assistant-halo: var(--assistant-halo);
+  --color-ring: var(--ring);
+  --color-overlay: var(--overlay);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-chart-6: var(--chart-6);
+  --color-chart-grid: var(--chart-grid);
+  --color-chart-income: var(--chart-income);
+  --color-chart-expense: var(--chart-expense);
+  --color-chart-tax: var(--chart-tax);
+
+  /* Legacy colour utilities (bg-card, text-muted-foreground, ...) */
   --color-muted-foreground: var(--muted-foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-elevated: var(--elevated);
   --color-elevated-foreground: var(--elevated-foreground);
   --color-inset: var(--inset);
-  --color-border: var(--border);
-  --color-field-border: var(--field-border);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-info: var(--info);
-  --color-ring: var(--ring);
+
+  /* Radius */
+  --radius-xs: var(--radius-xs);
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
-  --font-sans: var(--font-geist), -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --radius-control: var(--radius-control);
+  --radius-panel: var(--radius-panel);
+  --radius-dialog: var(--radius-dialog);
+  --radius-pill: var(--radius-pill);
+
+  /* Elevation */
+  --shadow-flat: var(--shadow-flat);
+  --shadow-raised: var(--shadow-raised);
+  --shadow-floating: var(--shadow-floating);
+  --shadow-modal: var(--shadow-modal);
+
+  /* Page rhythm: gap-section, space-y-block, mt-stack, ... */
+  --spacing-section: var(--space-section);
+  --spacing-block: var(--space-block);
+  --spacing-stack: var(--space-stack);
+  --spacing-gutter: var(--page-gutter);
+  --spacing-row: var(--row-height);
+  --spacing-row-compact: var(--row-height-compact);
+
+  /* Containers: max-w-data, max-w-reading, max-w-form */
+  --container-data: var(--container-data);
+  --container-reading: var(--container-reading);
+  --container-form: var(--container-form);
+
+  /* Easing: ease-standard, ease-entrance, ease-exit, ease-emphasized */
+  --ease-standard: var(--ease-standard);
+  --ease-entrance: var(--ease-entrance);
+  --ease-exit: var(--ease-exit);
+  --ease-emphasized: var(--ease-emphasized);
+
+  /* Type families. Display uses Geist until a display face is approved. */
+  --font-sans: var(--font-geist), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-display: var(--font-sans);
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+  /* Type scale: text-display, text-title, ... Size / line height. */
+  --text-display: clamp(2.5rem, 1.75rem + 3.2vw, 3.75rem); /* the settled figure */
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.025em;
+  --text-figure: 1.75rem; /* 28 secondary key figures */
+  --text-figure--line-height: 2rem;
+  --text-figure--letter-spacing: -0.015em;
+  --text-title: 1.75rem; /* 28 page titles */
+  --text-title--line-height: 2.25rem;
+  --text-title--letter-spacing: -0.015em;
+  --text-heading: 1.0625rem; /* 17 panel and dialog titles */
+  --text-heading--line-height: 1.5rem;
+  --text-subheading: 0.9375rem; /* 15 section headings */
+  --text-subheading--line-height: 1.25rem;
+  --text-body: 0.875rem; /* 14 interface text */
+  --text-body--line-height: 1.25rem;
+  --text-body-lg: 0.9375rem; /* 15 reading text */
+  --text-body-lg--line-height: 1.5rem;
+  --text-label: 0.8125rem; /* 13 labels, metadata, table headers */
+  --text-label--line-height: 1.125rem;
+  --text-micro: 0.75rem; /* 12 badges, provenance marks, captions */
+  --text-micro--line-height: 1rem;
 }
+
+/* ------------------------------------------------------------------ */
+/* Base                                                                */
+/* ------------------------------------------------------------------ */
 
 body {
   background: var(--background);
@@ -139,10 +422,34 @@ body {
   background: color-mix(in srgb, var(--primary) 28%, transparent);
 }
 
+@layer base {
+  /* A visible focus indicator for anything that does not draw its own.
+     Layered, so component focus utilities still override it. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
 /* Financial figures: tabular so digits align in stacked/scanned lists. */
 .font-numeric {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
+}
+
+/* Shared focus treatment for new primitives: focus-visible:focus-ring */
+@utility focus-ring {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Accounting rules. A single rule above a sub-total; a double rule
+   under the one settled figure in a view (at most one per view). */
+@utility rule-subtotal {
+  border-top: 1px solid color-mix(in srgb, var(--foreground) 40%, transparent);
+}
+@utility rule-settled {
+  border-bottom: 3px double var(--foreground);
 }
 
 /* ------------------------------------------------------------------ */
@@ -157,7 +464,7 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 .page-enter {
-  animation: page-in 220ms var(--ease-standard) both;
+  animation: page-in var(--duration-normal) var(--ease-standard) backwards;
 }
 
 /* Loading placeholders: a slow breathing pulse, not a shimmer sweep. */
@@ -166,7 +473,7 @@ body {
   50% { opacity: 0.55; }
 }
 .skeleton {
-  background: var(--inset);
+  background: var(--surface-sunken);
   border-radius: var(--radius-sm);
   animation: skeleton-pulse 1.6s ease-in-out infinite;
 }
@@ -178,15 +485,7 @@ body {
 }
 .bar-grow {
   transform-origin: left center;
-  animation: bar-grow 480ms var(--ease-standard) both;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .page-enter,
-  .skeleton,
-  .bar-grow {
-    animation: none;
-  }
+  animation: bar-grow var(--duration-reveal) var(--ease-standard) both;
 }
 
 /* Mobile navigation drawer: a short, purposeful slide/fade — never the
@@ -201,95 +500,306 @@ body {
   to { opacity: 1; }
 }
 .shell-drawer-enter {
-  animation: shell-drawer-in 200ms var(--ease-standard);
+  animation: shell-drawer-in var(--duration-normal) var(--ease-entrance);
 }
 .shell-overlay-enter {
-  animation: shell-overlay-in 200ms ease-out;
+  animation: shell-overlay-in var(--duration-normal) ease-out;
 }
+/* Exits leave the way they came, a little faster than they arrived. */
+.shell-drawer-exit {
+  animation: shell-drawer-in calc(var(--duration-normal) * 0.75) var(--ease-exit) reverse both;
+}
+.shell-overlay-exit {
+  animation: shell-overlay-in calc(var(--duration-normal) * 0.75) ease-in reverse both;
+}
+
+/* Menus and popovers grow out of their trigger. */
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.menu-enter {
+  animation: menu-in var(--duration-normal) var(--ease-entrance);
+}
+
+/* Ask SmartCA button: a resting halo in the assistant accent that widens
+   on hover and focus. No pulsing, no loop: it settles in once. */
+.assistant-fab {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--assistant) 10%, transparent), var(--shadow-floating);
+  transition:
+    box-shadow var(--duration-normal) var(--ease-standard),
+    transform var(--duration-normal) var(--ease-standard),
+    opacity var(--duration-normal) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard);
+  animation: fab-in var(--duration-slow) var(--ease-emphasized) 240ms backwards;
+}
+.assistant-fab:hover,
+.assistant-fab:focus-visible {
+  background-color: var(--primary-hover);
+  box-shadow: 0 0 0 7px var(--assistant-halo), var(--shadow-floating);
+}
+.assistant-fab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 9px;
+}
+.assistant-fab:active {
+  transform: scale(0.96);
+  transition-duration: var(--duration-instant);
+}
+/* Stepped aside while scrolling down on phones (AssistantLauncher). */
+.assistant-fab[data-tucked="true"] {
+  transform: translateY(calc(100% + 2rem));
+  opacity: 0;
+  pointer-events: none;
+}
+.assistant-fab[data-tucked="true"]:focus-visible {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+}
+@keyframes fab-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.92); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* Its label: appears after a short pause on hover, at once on keyboard
+   focus; touch devices rely on the accessible name instead. */
+.assistant-fab-tip {
+  opacity: 0;
+  transform: translate(4px, -50%);
+  transition:
+    opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+@media (hover: hover) {
+  .assistant-fab:hover .assistant-fab-tip {
+    opacity: 1;
+    transform: translate(0, -50%);
+    transition-delay: 300ms;
+  }
+}
+.assistant-fab:focus-visible .assistant-fab-tip {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
+/* Ask SmartCA panel: a native modal <dialog> shaped as a sheet from the
+   right edge, or from the bottom edge on phones. */
+.assistant-sheet {
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--border);
+  width: min(100vw, 30rem);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  background: var(--surface-elevated);
+  color: var(--foreground);
+  box-shadow: var(--shadow-modal);
+}
+.assistant-sheet::backdrop {
+  background: var(--overlay);
+}
+.assistant-sheet[open] {
+  animation: sheet-in-right var(--duration-slow) var(--ease-emphasized);
+}
+.assistant-sheet[open]::backdrop {
+  animation: shell-overlay-in var(--duration-normal) ease-out;
+}
+@keyframes sheet-in-right {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes sheet-in-up {
+  from { transform: translateY(32px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@media (max-width: 639px) {
+  .assistant-sheet {
+    margin: auto 0 0 0;
+    width: 100vw;
+    height: calc(100dvh - max(0.75rem, env(safe-area-inset-top)));
+    border-left: 0;
+    border-radius: var(--radius-dialog) var(--radius-dialog) 0 0;
+  }
+  .assistant-sheet[open] {
+    animation-name: sheet-in-up;
+  }
+}
+html:has(.assistant-sheet[open]) {
+  overflow: hidden;
+}
+
+/* App dialogs (components/ui/Dialog.tsx): native modal <dialog>,
+   centred from 640px, a bottom sheet on phones. */
+.app-dialog {
+  margin: auto;
+  padding: 0;
+  border: 0;
+  width: min(calc(100vw - 2rem), 32rem);
+  max-width: calc(100vw - 2rem);
+  max-height: min(calc(100dvh - 4rem), 52rem);
+  border-radius: var(--radius-dialog);
+  background: var(--surface-elevated);
+  color: var(--foreground);
+  box-shadow: var(--shadow-modal);
+}
+.app-dialog--lg {
+  width: min(calc(100vw - 2rem), 46rem);
+}
+.app-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  animation: dialog-in var(--duration-slow) var(--ease-emphasized);
+}
+.app-dialog::backdrop {
+  background: var(--overlay);
+}
+.app-dialog[open]::backdrop {
+  animation: shell-overlay-in var(--duration-normal) ease-out;
+}
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@media (max-width: 639px) {
+  .app-dialog {
+    margin: auto 0 0 0;
+    width: 100vw;
+    max-width: 100vw;
+    max-height: calc(100dvh - max(0.75rem, env(safe-area-inset-top)));
+    border-radius: var(--radius-dialog) var(--radius-dialog) 0 0;
+  }
+  .app-dialog[open] {
+    animation-name: sheet-in-up;
+  }
+}
+html:has(.app-dialog[open]) {
+  overflow: hidden;
+}
+
+/* Work in progress of unknown length (an upload being read): a short
+   bar travelling along its track. Static under reduced motion. */
+@keyframes progress-travel {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+.progress-indeterminate {
+  animation: progress-travel 1.4s var(--ease-standard) infinite;
+}
+
+/* A status that is still changing (a document being read): a soft pulse
+   on its dot only. */
+@keyframes status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.status-pulse {
+  animation: status-pulse 1.6s ease-in-out infinite;
+}
+
+/* Computation-sheet indentation: capped at two levels on phones (deeper
+   levels are marked by their row rule instead), full depth from 640px. */
+.tree-indent {
+  padding-left: calc(min(var(--depth, 0), 2) * 0.875rem);
+}
+@media (min-width: 640px) {
+  .tree-indent {
+    padding-left: calc(var(--depth, 0) * 1.25rem);
+  }
+}
+
+/* The app shell's top bar is sticky: keep anchors and focused elements
+   clear of it when the page scrolls to them. */
+html:has([data-app-shell]) {
+  scroll-padding-top: var(--header-height);
+}
+
+/* A line or bar drawn once, left to right (the settled figure's double
+   rule, the money-flow bar). Clipped rather than scaled, so rounded ends
+   never distort. */
+@keyframes wipe-in {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+.wipe-in {
+  animation: wipe-in var(--duration-slow) var(--ease-entrance) backwards;
+}
+.wipe-in-slow {
+  animation: wipe-in var(--duration-reveal) var(--ease-entrance) 120ms backwards;
+}
+
+/* Sections below the fold settle in as they enter the viewport, linked
+   to scroll position (no timers, no observers). They start softened, never
+   hidden (40% opacity), so nothing is invisible before it is scrolled to.
+   Content already in view is unaffected; a section is fully settled once
+   its top is 120px into view, whatever its height. Browsers without view
+   timelines, and anyone preferring reduced motion, see it in place. */
+@keyframes reveal-in {
+  from { opacity: 0.4; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal-in var(--ease-entrance) both;
+      animation-timeline: view();
+      animation-range: entry 0 entry 120px;
+    }
+  }
+}
+
+/* A composition donut settles in once on first render. */
+@keyframes donut-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+.donut-enter {
+  animation: donut-in var(--duration-reveal) var(--ease-entrance) backwards;
+}
+
+/* Recalculated figure: a faint accent wash that fades, so the eye finds
+   what changed. The figure itself never animates. */
+@keyframes recompute-wash {
+  from { background-color: color-mix(in srgb, var(--primary) 14%, transparent); }
+  to { background-color: transparent; }
+}
+.recompute-wash {
+  animation: recompute-wash var(--duration-wash) var(--ease-standard);
+}
+
 @media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 0.01ms;
+    --duration-fast: 0.01ms;
+    --duration-normal: 0.01ms;
+    --duration-slow: 0.01ms;
+    --duration-reveal: 0.01ms;
+    --duration-wash: 0.01ms;
+  }
+  .page-enter,
+  .skeleton,
+  .bar-grow,
   .shell-drawer-enter,
-  .shell-overlay-enter {
+  .shell-overlay-enter,
+  .shell-drawer-exit,
+  .shell-overlay-exit,
+  .menu-enter,
+  .wipe-in,
+  .wipe-in-slow,
+  .donut-enter,
+  .assistant-fab,
+  .app-dialog[open],
+  .app-dialog[open]::backdrop,
+  .progress-indeterminate,
+  .status-pulse,
+  .assistant-sheet[open],
+  .assistant-sheet[open]::backdrop {
     animation: none;
   }
-}
-
-@keyframes blob {
-  0% { transform: translate(0px, 0px) scale(1); }
-  33% { transform: translate(30px, -50px) scale(1.1); }
-  66% { transform: translate(-20px, 20px) scale(0.9); }
-  100% { transform: translate(0px, 0px) scale(1); }
-}
-
-.animate-blob {
-  animation: blob 15s infinite ease-in-out;
-}
-
-.animation-delay-2000 {
-  animation-delay: 2s;
-}
-
-.animation-delay-4000 {
-  animation-delay: 4s;
-}
-@keyframes blob {
-  0% {
-    transform: translate(0px, 0px) scale(1);
+  /* The change is still marked, without movement or fading. */
+  .recompute-wash {
+    animation: none;
+    box-shadow: inset 2px 0 0 var(--primary);
   }
-  33% {
-    transform: translate(40px, -60px) scale(1.1);
-  }
-  66% {
-    transform: translate(-30px, 50px) scale(0.95);
-  }
-  100% {
-    transform: translate(0px, 0px) scale(1);
-  }
-}
-
-.animate-blob {
-  animation: blob 18s infinite ease-in-out;
-}
-
-.animation-delay-2000 {
-  animation-delay: 2s;
-}
-
-.animation-delay-4000 {
-  animation-delay: 4s;
-}
-
-.blob{
-position:absolute;
-width:700px;
-height:700px;
-border-radius:50%;
-filter:blur(140px);
-opacity:0.25;
-animation:blobMove 18s infinite ease-in-out;
-}
-
-.blob1{
-background:#14b8a6;
-top:-200px;
-left:-200px;
-}
-
-.blob2{
-background:#10b981;
-bottom:-200px;
-right:-200px;
-animation-delay:4s;
-}
-
-.blob3{
-background:#0ea5a4;
-top:40%;
-left:35%;
-animation-delay:8s;
-}
-
-@keyframes blobMove{
-0%{transform:translate(0,0)}
-50%{transform:translate(60px,-40px)}
-100%{transform:translate(0,0)}
 }

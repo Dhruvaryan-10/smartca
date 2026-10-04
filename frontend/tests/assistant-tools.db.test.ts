@@ -32,7 +32,7 @@ import type { ToolResult } from "../services/assistant/tools";
 import { NotAuthenticatedError } from "../services/errors";
 import { createTransaction } from "../services/transactions";
 import { ingestTaxCorpus } from "../services/tax-corpus";
-import { computeTax, parseTaxRequest } from "../services/tax";
+import { computeTax, parseTaxRequest, saveTaxComputation } from "../services/tax";
 import { retrieveTaxLaw } from "../services/tax-retrieval";
 import type { InsufficientReason, TaxEvidence, TaxRetrievalResult } from "../services/tax-retrieval";
 import { calculateTax, compareRegimes, scenarioDelta, UnsupportedTaxRuleError } from "../tax-engine";
@@ -68,6 +68,7 @@ const VALID: Record<(typeof ASSISTANT_TOOL_NAMES)[number], Record<string, unknow
   calculate_tax: { regime: "old", ...taxBody() },
   compare_tax_regimes: taxBody(),
   simulate_tax: { regime: "old", base: taxBody({ deductions: {} }), scenario: taxBody() },
+  get_saved_tax_computation: {},
 };
 
 const NOT_A_USER = "00000000-0000-0000-0000-000000000000";
@@ -115,14 +116,16 @@ async function seedA(a: string, b: string) {
   await createTransaction(a, { type: "income", amountPaise: 100_000, category: "Salary", description: "A-salary-marker-jan", occurredOn: "2026-01-10", source: "manual" });
   await createTransaction(a, { type: "expense", amountPaise: 30_000, category: "Rent", description: "A-rent-marker", occurredOn: "2026-02-10", source: "manual" });
   await createTransaction(a, { type: "expense", amountPaise: 5_000, category: "Food", description: "A-food-marker", occurredOn: "2026-03-05", source: "manual" });
+  // A's saved computation (get_saved_tax_computation reads it); B saves none.
+  await saveTaxComputation(a, { ...taxBody(), income: { salaryPaise: 123_456_700, businessPaise: 0, otherPaise: 0 } });
   await createTransaction(a, { type: "income", amountPaise: 20_000, category: "Freelance", description: "A-free-marker", occurredOn: "2026-03-20", source: "manual" });
   await createTransaction(b, { type: "income", amountPaise: 999_999, category: "Salary", description: "B-secret-marker", occurredOn: "2026-02-11", source: "manual" });
 }
 
 // --- arguments -----------------------------------------------------------------------
 
-test("the tool set is exactly the six read-only tools, each a (userId, args) function", () => {
-  assert.deepEqual([...ASSISTANT_TOOL_NAMES].sort(), ["calculate_tax", "compare_tax_regimes", "get_financial_summary", "query_transactions", "search_tax_law", "simulate_tax"]);
+test("the tool set is exactly the seven read-only tools, each a (userId, args) function", () => {
+  assert.deepEqual([...ASSISTANT_TOOL_NAMES].sort(), ["calculate_tax", "compare_tax_regimes", "get_financial_summary", "get_saved_tax_computation", "query_transactions", "search_tax_law", "simulate_tax"]);
   assert.deepEqual(Object.keys(assistantTools).sort(), [...ASSISTANT_TOOL_NAMES].sort());
   for (const name of ASSISTANT_TOOL_NAMES) assert.equal(assistantTools[name].length, 2, `${name} takes exactly (userId, args)`);
 });
@@ -148,11 +151,11 @@ test("userId is never an argument: it, and any executor or other unknown field, 
   }
 });
 
-test("search_tax_law arguments: a question of 1 to 300 characters, an assessment year, and an optional section only", async () => {
+test("search_tax_law arguments: a question of 1 to 300 characters, an optional well-formed assessment year, and an optional section only", async () => {
   const bad: unknown[] = [
     { assessmentYear: "2026-27" }, { question: "", assessmentYear: "2026-27" }, { question: "   ", assessmentYear: "2026-27" },
     { question: "x".repeat(301), assessmentYear: "2026-27" }, { question: "x".repeat(501), assessmentYear: "2026-27" }, { question: 5, assessmentYear: "2026-27" },
-    { question: "q", assessmentYear: "2026" }, { question: "q", assessmentYear: "26-27" }, { question: "q" }, { question: "q", assessmentYear: 2026 },
+    { question: "q", assessmentYear: "2026" }, { question: "q", assessmentYear: "26-27" }, { question: "q", assessmentYear: 2026 },
     { question: "q", assessmentYear: "2026-27", sectionRef: 87 }, { question: "q", assessmentYear: "2026-27", sectionRef: "x".repeat(21) },
   ];
   for (const args of bad) assert.equal(refused(await assistantTools.search_tax_law(NOT_A_USER, args)).reason, "invalid_arguments", JSON.stringify(args).slice(0, 80));
@@ -570,9 +573,9 @@ test("the tool layer imports no write path, no database client and no unsafe ser
   assert.doesNotMatch(args, /@\/db|from\s+"\.\.\/\.\.\/(db|services)|node:|fetch\(/, "argument validation is pure");
 });
 
-test("the module exports only the six tools and their constants, never a raw service function", () => {
+test("the module exports only the seven tools and their constants, never a raw service function", () => {
   assert.deepEqual(Object.keys(toolsModule).sort(), [
-    "ASSISTANT_TOOL_NAMES", "COMPARISON_NOTICE", "LEDGER_DATA_NOTICE", "assistantTools", "createAssistantTools",
+    "ASSISTANT_TOOL_NAMES", "COMPARISON_NOTICE", "LEDGER_DATA_NOTICE", "SAVED_COMPUTATION_NOTICE", "assistantTools", "createAssistantTools",
   ]);
 });
 
@@ -605,4 +608,53 @@ test("running every tool against a real user changes no row in any table it coul
     assert.deepEqual(await snapshot(), before);
     assert.equal(before.a.transactions, 4, "the fixture is really there, so 'unchanged' means something");
   });
+});
+
+// --- get_saved_tax_computation and sort (Phase 15B) ----------------------------------------------------------------
+
+test("get_saved_tax_computation reads only the session user's newest saved computation: never another person's, never an id", async () => {
+  await withUsers(async (a, b) => {
+    await seedA(a, b);
+    const mine = ok(await assistantTools.get_saved_tax_computation(a, {}) as ToolResult<unknown>) as Record<string, unknown>;
+    assert.deepEqual(Object.keys(mine).sort(), ["assessmentYear", "input", "notice", "numbers", "results", "savedAt", "savedComputations"]);
+    assert.equal(mine.assessmentYear, "2026-27");
+    const text = JSON.stringify(mine);
+    assert.ok(text.includes("123456700"), "A's own saved salary is there");
+    for (const forbidden of [a, b, "runId", "userId", "\"id\"", "computationData"]) assert.equal(text.includes(forbidden), false, `no ${forbidden} in the result`);
+
+    const theirs = await assistantTools.get_saved_tax_computation(b, {});
+    assert.equal(theirs.status, "refused", "B has saved nothing, and A's computation is never B's");
+    assert.equal(theirs.status === "refused" && theirs.reason, "no_saved_computation");
+    assert.equal(JSON.stringify(theirs).includes("123456700"), false);
+
+    for (const bad of [{ assessmentYear: "2026" }, { assessmentYear: 2026 }, { userId: b }, { runId: "x" }]) {
+      const refused = await assistantTools.get_saved_tax_computation(a, bad);
+      assert.equal(refused.status === "refused" && refused.reason, "invalid_arguments", JSON.stringify(bad));
+    }
+    const otherYear = await assistantTools.get_saved_tax_computation(a, { assessmentYear: "2019-20" });
+    assert.equal(otherYear.status === "refused" && otherYear.reason, "unsupported_assessment_year");
+  });
+});
+
+test("query_transactions sort: \"amount\" lists the largest first and says so; the default stays newest first", async () => {
+  await withUsers(async (a, b) => {
+    await seedA(a, b);
+    const byAmount = ok(await assistantTools.query_transactions(a, { type: "expense", sort: "amount" }) as ToolResult<unknown>) as { sortedBy: string; transactions: Array<{ amountPaise: number }> };
+    assert.equal(byAmount.sortedBy, "amount");
+    const amounts = byAmount.transactions.map((t) => t.amountPaise);
+    assert.deepEqual(amounts, [...amounts].sort((x, y) => y - x));
+    const byDate = ok(await assistantTools.query_transactions(a, {}) as ToolResult<unknown>) as { sortedBy: string; transactions: Array<{ occurredOn: string }> };
+    assert.equal(byDate.sortedBy, "date");
+    const dates = byDate.transactions.map((t) => t.occurredOn);
+    assert.deepEqual(dates, [...dates].sort().reverse());
+    const refused = await assistantTools.query_transactions(a, { sort: "random" });
+    assert.equal(refused.status === "refused" && refused.reason, "invalid_arguments");
+  });
+});
+
+test("search_tax_law without an assessment year searches the newest year the engine supports (the corpus year)", async () => {
+  const asked: string[] = [];
+  const tools = createAssistantTools({ retrieve: async (input) => { asked.push(input.assessmentYear); return { status: "insufficient_evidence", reason: "no_matching_passages", assessmentYear: input.assessmentYear, corpusVersion: "v", sectionRefs: [] }; } });
+  await tools.search_tax_law("00000000-0000-4000-8000-0000000000aa", { question: "What is Form 16?" });
+  assert.deepEqual(asked, ["2026-27"]);
 });

@@ -37,9 +37,9 @@ test("a dev run never retrieves for a test case, and a test run never retrieves 
 
   const dev = recordingDeps();
   const devResult = await runEvaluation(dataset, corpus, dev.deps, { split: "dev" });
-  assert.equal(dev.asked.length, 22);
+  assert.equal(dev.asked.length, 35);
   assert.ok(dev.asked.every((q) => devQuestions.has(q) && !testQuestions.has(q)));
-  assert.equal(devResult.cases.length, 22);
+  assert.equal(devResult.cases.length, 35);
   assert.ok(devResult.cases.every((c) => c.split === "dev"));
 
   const held = recordingDeps();
@@ -57,7 +57,7 @@ test("every case gets a result, in dataset order, and provisional cases are repo
   const provisional = dataset.cases.filter((c) => c.review.status === "provisional").length;
   assert.equal(result.metrics.provisional.cases, provisional);
   assert.equal(result.metrics.primary.cases, dataset.cases.length - provisional);
-  assert.equal(result.metrics.primary.cases + result.metrics.provisional.cases, 56, "nothing is dropped");
+  assert.equal(result.metrics.primary.cases + result.metrics.provisional.cases, 69, "nothing is dropped");
   assert.equal(result.metrics.bySplit.dev.cases + result.metrics.bySplit.test.cases, result.metrics.primary.cases);
 
   // Categories partition the primary set.
@@ -103,7 +103,7 @@ test("the report shows every section the brief asks for, never a single headline
 test("a case that fails only because retrieval threw is reported, and the run carries on", async () => {
   const deps: EvalDeps = { retrieve: async () => { throw new Error("connection lost"); }, lookupChunks: async () => new Map() };
   const result = await runEvaluation(dataset, corpus, deps, { split: "dev" });
-  assert.equal(result.cases.length, 22);
+  assert.equal(result.cases.length, 35);
   assert.ok(result.cases.every((c) => c.actual.status === "error" && c.failures.some((f) => f.kind === "retrieval_error")));
 });
 
@@ -124,7 +124,7 @@ test("against the shipped corpus: every case is answered, results are identical 
     assert.deepEqual(first, second, "stable across repeated runs");
     assert.equal(formatReport(first), formatReport(second));
 
-    assert.equal(first.cases.length, 56);
+    assert.equal(first.cases.length, 69);
     assert.ok(first.cases.every((c) => c.actual.status === "ok" || c.actual.status === "insufficient_evidence"), "no case errored");
     assert.equal(first.corpus.version, corpus.version);
     assert.ok(first.cases.every((c) => c.actual.corpusVersion === corpus.version));
@@ -175,9 +175,11 @@ test("Phase 5C, on the real dataset: a wrong-year question and a statute demand 
     assert.deepEqual(result.cases.filter((c) => c.actual.yearMismatch !== null).map((c) => c.id).sort(), ["ayi-02", "ayi-03"]);
     assert.deepEqual(result.cases.filter((c) => c.actual.authorityTier !== null).map((c) => c.id), ["ins-04"]);
 
-    // The hard failures that remain: none for the year, and for the tier only the case whose QUESTION does not say what it needs.
+    // No hard failure remains. With corpus v1, ins-03 (the ₹60,000 rebate and "tax on capital gains") was answered with 87A
+    // guidance although the claim needs statute; corpus v2's known gap 112A lists "tax on capital gains" as a question phrase,
+    // and no passage contains it, so retrieval now declines the question.
     assert.deepEqual(result.hardFailures.filter((f) => f.kind === "wrong_assessment_year_evidence"), []);
-    assert.deepEqual(result.hardFailures.map((f) => [f.id, f.kind]), [["ins-03", "higher_tier_claim_supported_only_by_guidance"]]);
+    assert.deepEqual(result.hardFailures.map((f) => [f.id, f.kind]), []);
   });
 });
 

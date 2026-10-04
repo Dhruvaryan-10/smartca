@@ -30,7 +30,17 @@ rag-corpus/
   must not be added; the manifest is refused if `governingAct` says otherwise.
 - **If it cannot be sourced, it is left out.** A section with no safely obtainable
   official source is listed under `knownGaps` in the manifest. It is not filled in
-  from memory.
+  from memory. A gap may list `questionPhrases` (2 to 6 lower-case words, for example
+  `"standard deduction"`): retrieval then refuses a question containing one unless a
+  passage it returns contains the phrase itself, so generic words a question shares
+  with an unrelated passage cannot make the gap look covered. Gaps reach retrieval
+  through the release row (`tax_corpus_releases.known_gaps`), not the file system.
+- **Current year first.** A page that states the assessment year (the AY 2026-27
+  salaried page, reviewed 09-Jul-2026) is the anchor. From an undated page (one that
+  shows "Last reviewed and updated on : current time") only passages that agree with
+  the anchor are taken; a passage written for an earlier year that is out of date for
+  this one (for example a Rs.50,000 new-regime standard deduction) is left out, and
+  `sourceDate` is null. Each source's `notes` says what was taken and what was not.
 - **Pinned.** Each source pins the SHA-256 of its normalised text (no byte-order
   mark, LF line endings, one trailing newline), so an accidental edit is caught at
   ingestion and CRLF checkouts hash identically.
@@ -59,7 +69,16 @@ rag-corpus/
 | `notification_circular` | A CBDT circular or notification. |
 | `official_guidance` | Income Tax Department guidance (for example the e-Filing portal help pages). |
 
-The seed corpus contains **official guidance only**. The pages themselves say
+Commentary, blogs and other secondary summaries are not a tier and are never
+taken. Income Tax Department FAQs and explanations on the e-Filing portal are
+`official_guidance`; CBDT circulars and notifications would be
+`notification_circular`; the Act, a Finance Act or the Rules would be `statute`.
+No statute or circular text is in the corpus yet (the official repositories refused
+automated requests at both curations), so a question that needs that authority is
+refused, and the answer layer blocks text that speaks with an authority the evidence
+lacks.
+
+The corpus contains **official guidance only**. The pages themselves say
 they are an overview and are not exhaustive, and refer to the Act, Forms, Rules
 and Notifications for complete details.
 

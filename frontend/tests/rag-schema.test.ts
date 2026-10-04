@@ -39,7 +39,7 @@ test("the three corpus tables exist with the columns the design calls for", asyn
     "char_end", "char_start", "chunk_index", "heading_path", "id", "regime", "search_vector", "section_ref",
     "source_id", "text", "text_sha256", "topics", "verification_status",
   ]);
-  assert.deepEqual(await columns("tax_corpus_releases"), ["created_at", "id", "manifest_sha256", "version"]);
+  assert.deepEqual(await columns("tax_corpus_releases"), ["created_at", "id", "known_gaps", "manifest_sha256", "version"]);
 });
 
 test("the corpus belongs to nobody: no user column and no link to any other table but its own source", async () => {

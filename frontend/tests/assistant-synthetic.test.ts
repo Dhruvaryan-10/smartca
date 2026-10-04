@@ -122,7 +122,8 @@ test("honest scenarios run end to end through the synthetic tools and are answer
 // --- the tool gate: only the five served tools are declared -----------------------------------------------------------------
 
 test("synthetic mode declares exactly the five tools it serves: query_transactions is never offered to the model", async () => {
-  assert.deepEqual([...SYNTHETIC_TOOL_NAMES], ASSISTANT_TOOL_NAMES.filter((name) => name !== "query_transactions"));
+  // No ledger and no saved computation in synthetic mode: its data is fixtures, and neither has one.
+  assert.deepEqual([...SYNTHETIC_TOOL_NAMES], ASSISTANT_TOOL_NAMES.filter((name) => name !== "query_transactions" && name !== "get_saved_tax_computation"));
 
   const inner = createSyntheticModel({ scenario: "plain" });
   const requests: ModelRequest[] = [];

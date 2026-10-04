@@ -43,6 +43,13 @@
       "when": 1790780411261,
       "tag": "0005_assistant_run_limits_and_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791031046825,
+      "tag": "0006_corpus_known_gaps",
+      "breakpoints": true
     }
   ]
 }

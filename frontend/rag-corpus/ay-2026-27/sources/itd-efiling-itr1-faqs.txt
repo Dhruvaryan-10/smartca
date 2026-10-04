@@ -1,0 +1,31 @@
+# FAQs on filing ITR-1 (Sahaj)
+
+## Documents needed to file ITR-1
+4. What documents do I need to file ITR-1?
+
+You would need to download AIS and keep copies of Form 16, house rent receipt (if applicable), investment payment, premium receipts (if applicable). However, ITRs are annexure-less forms, so you are not required to attach any document (like proof of investment, TDS certificates) along with your return (whether filed manually or electronically). However, you need to keep these documents for situations where they need to be produced before tax authorities such as assessment, inquiry, etc
+
+## What is advance tax
+14. What is Advance Tax?
+
+For salaried individuals, advance tax is mostly taken care of through TDS by employers. But other forms of income such as interest on savings bank accounts, fixed deposits, rental income, bonds, or capital gains increase the tax liability. Tax liability needs to be estimated beforehand. If tax amounts to more than ₹10,000/- per year, taxpayers need to pay advance tax in quarterly instalments (June, September, December and March).
+
+## Self-assessment tax
+Self-Assessment Tax: After filling out your ITR form with the TDS and advance tax details (if paid), the system computes your income and checks whether tax is still payable. You need to pay it and then fill in the challan details in the return before submitting it.
+
+## Allowances and perquisites
+16. What is the difference between allowance and perquisite? Are these considered as my income?
+
+Allowances are fixed periodic amounts, apart from salary, which are paid by an employer, e.g., conveyance allowance, travelling allowance, uniform allowance, etc. Allowances are considered income and will increase your gross total income on which you will be taxed. Allowances can be taxable, partially exempted, and fully exempted.
+
+Perquisites are benefits you receive because of your official position, and are over and above your salary or wage income. These perquisites can be taxable or non-taxable depending upon their nature.
+
+## Filing a return when tax was deducted at source
+22. Do I need to file returns if tax has been deducted by my employer / bank?
+
+Yes, employers and banks deduct tax at source on salary and interest income respectively. You still need to disclose the income on which tax has been deducted and claim credit for TDS in the Income Tax Return.
+
+## Refund of excess tax
+23. Will I get a refund if I have paid excess tax?
+
+Yes, any excess tax paid by you can be claimed as refund by filing your Income Tax Return. After your return is processed, ITD checks and accordingly accepts your refund claim, and then the amount is credited to your bank account. You will also get a message on your email ID registered on the e-Filing portal.

@@ -28,6 +28,7 @@ export const ANSWER_TOOL_NAMES = [
   "calculate_tax",
   "compare_tax_regimes",
   "simulate_tax",
+  "get_saved_tax_computation",
 ] as const;
 export type AnswerToolName = (typeof ANSWER_TOOL_NAMES)[number];
 
@@ -57,6 +58,7 @@ export const ANSWER_VIOLATION_CODES = [
   "authority_upgrade",
   "law_claim_without_evidence",
   "uncited_law_claim",
+  "unsupported_instrument",
 ] as const;
 export type ViolationCode = (typeof ANSWER_VIOLATION_CODES)[number];
 export type Violation = { code: ViolationCode; severity: "blocking" | "warning"; detail: string };
@@ -66,8 +68,13 @@ export type Violation = { code: ViolationCode; severity: "blocking" | "warning";
  * insufficient_evidence  tax-law retrieval refused and no evidence exists: no law claim is supported.
  * unsupported            an engine calculation was refused and no calculation succeeded.
  * withheld               the text broke a blocking rule; it is not released. The facts still stand.
+ * needs_clarification    the model asked one question back (its text began with CLARIFY_PREFIX) and broke no blocking rule;
+ *                        the question is released without the prefix.
  */
-export type AnswerState = "answered" | "insufficient_evidence" | "unsupported" | "withheld";
+export type AnswerState = "answered" | "insufficient_evidence" | "unsupported" | "withheld" | "needs_clarification";
+
+/** How the model marks a reply that is a question back to the person (the system prompt says when to use it). */
+export const CLARIFY_PREFIX = "CLARIFY:";
 
 type Provenance = { origin: "tool"; tool: AnswerToolName; callId: string; round: number };
 
@@ -94,7 +101,7 @@ export type RefusalFact = Provenance & { kind: "refusal"; reason: string; messag
 /** The engine's own result, verbatim. `payload` is the tool result content untouched; nothing here is computed. */
 export type TaxValueFact = Provenance & {
   kind: "tax_value";
-  shape: "single_regime" | "regime_comparison" | "scenario";
+  shape: "single_regime" | "regime_comparison" | "scenario" | "saved_computation";
   assessmentYear: string;
   engineVersion: string | null;
   rulesVersion: string | null;
@@ -239,6 +246,36 @@ function parseOk(tool: AnswerToolName, result: unknown, meta: { callId: string; 
     if (!isObj(r.input)) invalid("The validated input is missing.");
     const fact: TaxValueFact = { ...provenance, kind: "tax_value", shape: "single_regime", assessmentYear: lite.year, engineVersion: lite.engine, rulesVersion: lite.rules, payload: clone(r), notice: null };
     return { kind: "tax", fact, results: [lite], scenarioKeys: [{ key: `${lite.year}|${lite.regime}|${canon(r.input)}`, value: canon([lite.total, lite.taxable, lite.engine, lite.rules]) }], refusals: [] };
+  }
+
+  if (tool === "get_saved_tax_computation") {
+    // The person's newest saved computation: each saved regime is the engine's own result, checked exactly like a fresh one.
+    if (!isText(r.notice)) invalid("The saved computation has no notice.");
+    const year = (isText(r.assessmentYear) ? r.assessmentYear : invalid("The assessment year is missing.")) as string;
+    if (!isText(r.savedAt)) invalid("The saved date is missing.");
+    const saved = isObj(r.results) ? r.results : invalid("The saved results are missing.");
+    const results: TaxResultLite[] = [];
+    for (const regime of ["old", "new"] as const) {
+      if (saved[regime] === null) continue;
+      const lite = checkTaxResult(saved[regime], `results.${regime}`);
+      if (lite.regime !== regime) invalid(`results.${regime} holds a ${lite.regime}-regime result.`);
+      if (lite.year !== year) invalid(`results.${regime} is for a different assessment year.`);
+      results.push(lite);
+    }
+    if (results.length === 0) invalid("A saved computation holds no result.");
+    if (r.numbers !== null) {
+      const n = isObj(r.numbers) ? r.numbers : invalid("The saved comparison numbers are malformed.");
+      const oldResult = results.find((x) => x.regime === "old");
+      const newResult = results.find((x) => x.regime === "new");
+      if (!oldResult || !newResult) invalid("Comparison numbers exist although a regime has no saved result.");
+      if (n.oldTotalTaxPaise !== oldResult?.total || n.newTotalTaxPaise !== newResult?.total) invalid("The saved comparison numbers do not match the results they summarise.");
+    }
+    const first = results[0];
+    const fact: TaxValueFact = {
+      ...provenance, kind: "tax_value", shape: "saved_computation", assessmentYear: year, engineVersion: first.engine, rulesVersion: first.rules,
+      payload: clone(r), notice: r.notice as string,
+    };
+    return { kind: "tax", fact, results, scenarioKeys: [], refusals: [] };
   }
 
   if (tool === "compare_tax_regimes") {
@@ -502,6 +539,29 @@ const ANY_NEGATION = /\b(?:not|no|never|neither|nor|cannot|can't|can\s+not|could
 const REFUSAL = /\b(?:cannot|can't|can\s+not|couldn't|could\s+not|unable|not\s+able|won't|will\s+not|don't\s+have|do\s+not\s+have|have\s+no|has\s+no|there\s+is\s+no|there's\s+no|no\s+evidence|no\s+sources?|not\s+found|without|unsupported|insufficient)\b/gi;
 
 /** Whether a cue sits right before `index` in the same clause: the only way a negation licenses what follows it. */
+/**
+ * Named investments and payments people ask about for deductions. A sentence that says one qualifies or can be claimed must be
+ * backed by evidence that names it (or by the person's own words naming it): official guidance describes 80C as "contribution to
+ * any Provident Fund set up by the Government", not "PPF", and a model that fills in a list from memory (PPF, ELSS, mutual funds)
+ * is stating law the cited passage does not say.
+ */
+const INSTRUMENTS: ReadonlyArray<[string, RegExp]> = [
+  ["PPF", /\bppf\b|\bpublic provident fund\b/i],
+  ["EPF", /\bepf\b|\bemployees?'?s? provident fund\b/i],
+  ["VPF", /\bvpf\b|\bvoluntary provident fund\b/i],
+  ["ELSS", /\belss\b|\bequity[- ]linked savings? schemes?\b/i],
+  ["ULIP", /\bulips?\b|\bunit[- ]linked insurance\b/i],
+  ["Sukanya Samriddhi", /\bsukanya\b/i],
+  ["SCSS", /\bscss\b|\bsenior citizens?'? savings scheme\b/i],
+  ["NPS", /\bnps\b|\bnational pension (?:system|scheme)\b/i],
+  ["tax-saver deposit", /\btax[- ]sav(?:er|ing) (?:fixed )?deposits?\b|\bfixed deposits?\b/i],
+  ["mutual funds", /\bmutual funds?\b/i],
+  ["Atal Pension Yojana", /\batal pension\b/i],
+  ["Kisan Vikas Patra", /\bkisan vikas\b/i],
+  ["stamp duty", /\bstamp duty\b/i],
+];
+const CLAIM_WORD = /\b(?:deduct\w*|claim\w*|qualif\w*|eligib\w*|allow\w*|covered|counts?|exempt\w*|tax[- ]sav\w*|80[A-Z]{1,4})\b/gi;
+
 function denied(sentence: string, index: number, cues: RegExp): boolean {
   const before = sentence.slice(0, index);
   let cue: RegExpMatchArray | null = null;
@@ -663,7 +723,10 @@ export function buildAnswer(input: AnswerInput): Answer {
   if (conflicting) flag("conflicting_tool_results", "blocking", "Tool results for the same calculation disagree.");
 
   // --- 2. the model's text --------------------------------------------------------------------------
-  const rawText = input.text.trim();
+  const trimmed = input.text.trim();
+  // A question back to the person: the marker is removed, and everything below checks the question exactly as any text.
+  const clarifies = trimmed.toUpperCase().startsWith(CLARIFY_PREFIX);
+  const rawText = clarifies ? trimmed.slice(CLARIFY_PREFIX.length).trim() : trimmed;
   const text = normalize(rawText);
   if (rawText === "") flag("empty_text", "blocking", "The model produced no text.");
   if (input.text.length > MAX_ANSWER_CHARS) flag("text_too_long", "blocking", `The text is longer than ${MAX_ANSWER_CHARS} characters.`);
@@ -717,6 +780,16 @@ export function buildAnswer(input: AnswerInput): Answer {
     if (claimsAny(sentence, STATUTE_CLAIM) && !tiers.has("statute")) flag("authority_upgrade", "blocking", "The text speaks with the authority of the Act or the statute, but no statute evidence exists.");
     if (claimsAny(sentence, CIRCULAR_CLAIM) && !tiers.has("notification_circular")) flag("authority_upgrade", "blocking", "The text speaks with the authority of a circular or notification, but no such evidence exists.");
 
+    // A named investment said to qualify needs evidence (or the person's own words) that names it.
+    if ([...sentence.matchAll(CLAIM_WORD)].length > 0) {
+      for (const [name, pattern] of INSTRUMENTS) {
+        const m = pattern.exec(sentence);
+        if (!m || denied(sentence, m.index, ANY_NEGATION)) continue;
+        const named = quotes.some((q) => pattern.test(q)) || (input.userMessages ?? []).some((message) => pattern.test(message));
+        if (!named) flag("unsupported_instrument", "blocking", `The text says ${name} relates to a deduction, but no cited passage names it.`);
+      }
+    }
+
     const hasSection = SECTION_KEYWORD.test(sentence) || SECTION_BARE.test(sentence);
     if (hasSection && !hasCitation(sentence) && [...sentence.matchAll(LAW_VERB)].some((m) => !denied(sentence, m.index as number, REFUSAL))) {
       if (evidence.length === 0) flag("law_claim_without_evidence", "blocking", "The text makes a claim about a section of the law and no tax-law evidence exists.");
@@ -728,7 +801,7 @@ export function buildAnswer(input: AnswerInput): Answer {
   const isBlocked = violations.some((v) => v.severity === "blocking");
   const taxRefused = refusals.some((r) => r.tool === "calculate_tax" || r.tool === "compare_tax_regimes" || r.tool === "simulate_tax");
   const lawRefused = refusals.some((r) => r.tool === "search_tax_law");
-  const state: AnswerState = isBlocked ? "withheld" : taxRefused && taxValues.length === 0 ? "unsupported" : lawRefused && evidence.length === 0 ? "insufficient_evidence" : "answered";
+  const state: AnswerState = isBlocked ? "withheld" : clarifies ? "needs_clarification" : taxRefused && taxValues.length === 0 ? "unsupported" : lawRefused && evidence.length === 0 ? "insufficient_evidence" : "answered";
 
   const notices: string[] = [];
   for (const fact of taxValues) if (fact.notice !== null && !notices.includes(fact.notice)) notices.push(fact.notice);

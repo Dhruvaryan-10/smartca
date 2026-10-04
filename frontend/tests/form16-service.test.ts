@@ -98,7 +98,7 @@ test("uploading a text Form 16 stores the file and an extraction that awaits rev
     assert.equal(detail.extraction.status, "needs_review");
     assert.equal(detail.extraction.confirmed, null, "nothing is confirmed by extraction");
     assert.equal(detail.extraction.failureMessage, null);
-    assert.equal(detail.extraction.extractorVersion, "form16-text-v1");
+    assert.equal(detail.extraction.extractorVersion, "form16-text-v2");
 
     const field = (key: string) => detail.extraction.extracted.fields.find((f) => f.key === key)!;
     assert.equal(field("grossSalary").status, "found");
@@ -237,7 +237,7 @@ test("confirming records exactly what the user confirmed, with the salary derive
     const confirmed = await confirmForm16(userId, doc.id, { ...confirmBody(), salaryIncomePaise: 1, schemaVersion: 99 });
     assert.deepEqual(confirmed, {
       schemaVersion: 1,
-      extractorVersion: "form16-text-v1",
+      extractorVersion: "form16-text-v2",
       assessmentYear: "2026-27",
       employerName: "ACME ONE PRIVATE LIMITED",
       grossSalaryPaise: rupees(12_00_000),

@@ -19,6 +19,7 @@ import { parseToolArguments } from "../services/assistant/model";
 import type { ModelAdapter, ModelRequest, ModelResponse } from "../services/assistant/model";
 import { ASSISTANT_TOOL_NAMES } from "../lib/assistant/tool-contract";
 import type { ToolName } from "../lib/assistant/tool-contract";
+import { calculateTax, comparisonNumbers } from "../tax-engine";
 import type { createAssistantTools, ToolResult } from "../services/assistant/tools";
 import {
   ANSWER_TOOL_NAMES, ANSWER_VIOLATION_CODES, AnswerInputError, GUIDANCE_NOTICE, MAX_ANSWER_CHARS, buildAnswer,
@@ -28,6 +29,7 @@ import {
   COMPARISON_NOTICE, LEDGER_DATA_NOTICE, calcRecord, calcResult, compareRecord, compareResult, engineInput, evidence, evidenceId, inr,
   searchRecord, searchRefusal, simulateDelta, simulateRecord, summaryRecord, taxRefusal, transactionsRecord,
 } from "./helpers-answer";
+import { presentForModel } from "../lib/assistant/model-view";
 
 const FRONTEND = path.resolve(__dirname, "..");
 const OLD = calcResult("old");
@@ -584,7 +586,7 @@ test("every violation code is documented, and every blocking check has a test ab
   assert.deepEqual([...ANSWER_VIOLATION_CODES].sort(), [
     "authority_upgrade", "conflicting_tool_results", "empty_text", "impersonated_tool_output", "invalid_tool_record", "invalid_tool_result",
     "invented_evidence_id", "law_claim_without_evidence", "malformed_citation", "regime_recommendation", "regime_unattributed", "text_too_long",
-    "uncited_law_claim", "unsupported_deadline", "ungrounded_figure",
+    "uncited_law_claim", "unsupported_deadline", "ungrounded_figure", "unsupported_instrument",
   ].sort());
 });
 
@@ -619,7 +621,7 @@ test("the orchestrator hands each tool result to an opt-in callback, in order, a
 
   assert.deepEqual(seen.map((r) => [r.round, r.callId, r.tool, r.result.status]), [[1, "a", "get_financial_summary", "ok"], [1, "b", "calculate_tax", "ok"]]);
   const toolMessage = model.requests[1].messages.find((m) => m.role === "tool" && m.toolCallId === "b");
-  assert.equal(toolMessage?.content, JSON.stringify(canned), "the callback's mutation of its copy changed nothing the model received");
+  assert.equal(toolMessage?.content, JSON.stringify(presentForModel(canned)), "the callback's mutation of its copy changed nothing the model received");
   assert.equal(((canned.result as { totalTaxPaise: number })).totalTaxPaise, 4_200_000, "nor the tool's own object");
   assert.equal(JSON.stringify(result).includes("4200000"), false, "and the returned result still carries no tool result");
   assert.deepEqual(Object.keys(result).sort(), ["evidenceIds", "rounds", "text", "toolCalls"]);
@@ -637,3 +639,61 @@ test("without the callback nothing changes, and a callback that throws is not sw
 
 // The end-to-end test that runs the REAL tools (orchestrator -> real calculate_tax -> answer layer) needs the database module
 // to load, so it lives in assistant-answer-contract.db.test.ts, not here.
+
+// --- get_saved_tax_computation (Phase 15B) --------------------------------------------------------------------------
+
+test("a saved computation is read like a fresh one: its engine results become a saved_computation fact, checked, with the notice", () => {
+  const input = { assessmentYearLabel: "2026-27", ageCategory: "below60" as const, incomeSources: [{ kind: "salary" as const, label: "Salary", amountPaise: 150_000_000 }], deductions: [] };
+  const oldResult = calculateTax({ ...input, regime: "old" });
+  const newResult = calculateTax({ ...input, regime: "new" });
+  const envelope = (results: unknown, numbers: unknown) => ({
+    round: 1, callId: "saved1", tool: "get_saved_tax_computation",
+    result: { status: "ok", tool: "get_saved_tax_computation", result: { assessmentYear: "2026-27", savedAt: "2026-10-01T10:00:00.000Z", savedComputations: 1, input, results, numbers, notice: "As saved." } },
+  });
+  const both = buildAnswer({ text: `Your saved tax under the new regime is ${inr(newResult.totalTaxPaise)}.`, toolRecords: [envelope({ old: oldResult, new: newResult }, comparisonNumbers(oldResult, newResult))] });
+  assert.equal(both.state, "answered", JSON.stringify(both.violations));
+  assert.equal(both.facts.taxValues[0].shape, "saved_computation");
+  assert.equal(both.facts.taxValues[0].notice, "As saved.");
+
+  const oneRegime = buildAnswer({ text: "Saved.", toolRecords: [envelope({ old: oldResult, new: null }, null)] });
+  assert.deepEqual(oneRegime.violations.filter((v) => v.code === "invalid_tool_result"), [], "only one regime saved is fine");
+
+  const tampered = buildAnswer({ text: "Saved.", toolRecords: [envelope({ old: oldResult, new: newResult }, { ...comparisonNumbers(oldResult, newResult), newTotalTaxPaise: 1 })] });
+  assert.ok(tampered.violations.some((v) => v.code === "invalid_tool_result"), "numbers that disagree with the results are refused");
+  const swapped = buildAnswer({ text: "Saved.", toolRecords: [envelope({ old: newResult, new: oldResult }, null)] });
+  assert.ok(swapped.violations.some((v) => v.code === "invalid_tool_result"), "a result under the wrong regime is refused");
+  const empty = buildAnswer({ text: "Saved.", toolRecords: [envelope({ old: null, new: null }, null)] });
+  assert.ok(empty.violations.some((v) => v.code === "invalid_tool_result"), "a saved computation with no result is refused");
+
+  const wrongFigure = buildAnswer({ text: `Your saved tax is ${inr(newResult.totalTaxPaise + 100)} under the new regime.`, toolRecords: [envelope({ old: oldResult, new: newResult }, comparisonNumbers(oldResult, newResult))] });
+  assert.equal(wrongFigure.state, "withheld", "a figure one rupee off the saved result is withheld");
+});
+
+// --- named investments and clarification (Phase 15B) ------------------------------------------------------------------
+
+test("a named investment said to qualify needs a cited passage, or the person's own words, that names it", () => {
+  const cite = (n: number) => `[${evidenceId(n)}]`;
+  const passage = (quote: string) => [searchRecord([evidence(1, { quote })])];
+  const listed = "80C | Life Insurance Premium Provident Fund Subscription to certain equity shares Tuition Fees";
+  const blocked = (text: string, records = passage(listed), said?: string[]) => answer(text, records, said).violations.some((v) => v.code === "unsupported_instrument");
+  for (const text of [`PPF qualifies under 80C ${cite(1)}.`, `You can claim ELSS and ULIPs under section 80C ${cite(1)}.`, `Mutual funds are eligible for the deduction ${cite(1)}.`, `NPS counts towards 80C ${cite(1)}.`]) {
+    assert.equal(blocked(text), true, text);
+    assert.equal(answer(text, passage(listed)).state, "withheld", text);
+  }
+  assert.equal(blocked(`Life insurance premiums qualify under 80C ${cite(1)}.`), false, "an item the passage lists is fine");
+  assert.equal(blocked(`The Public Provident Fund qualifies ${cite(1)}.`, passage("contribution to the Public Provident Fund")), false, "named in the passage");
+  assert.equal(blocked(`Whether your PPF counts depends on the scheme ${cite(1)}.`, passage(listed), ["Does my PPF count for 80C?"]), false, "named by the person");
+  assert.equal(blocked(`The guidance does not say ELSS is eligible ${cite(1)}.`), false, "a negation is not a claim");
+  assert.equal(blocked(`I see PPF in your ledger.`), false, "a mention with no claim about a deduction");
+});
+
+test("a reply that begins with CLARIFY: is a question back: released without the marker, and still checked", () => {
+  const ok = answer("CLARIFY: Which payment do you mean?");
+  assert.equal(ok.state, "needs_clarification");
+  assert.equal(ok.text?.content, "Which payment do you mean?");
+  assert.equal(answer("clarify: which year?").state, "needs_clarification", "the marker is matched in any case");
+  const bad = answer("CLARIFY: Was it the ₹9,99,999 payment?");
+  assert.equal(bad.state, "withheld");
+  assert.equal(bad.text, null);
+  assert.equal(answer("Please clarify: CLARIFY is mid-text.").state, "answered", "only a leading marker counts");
+});

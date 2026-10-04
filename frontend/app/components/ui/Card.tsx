@@ -7,7 +7,7 @@ import type { HTMLAttributes } from "react";
 export function Card({ className = "", ...props }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={`bg-card text-card-foreground border border-border rounded-[var(--radius-lg)] ${className}`}
+      className={`bg-surface text-foreground border border-border rounded-panel ${className}`}
       {...props}
     />
   );
@@ -18,7 +18,7 @@ export function CardHeader({ className = "", ...props }: HTMLAttributes<HTMLDivE
 }
 
 export function CardTitle({ className = "", ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={`text-[15px] font-semibold tracking-tight ${className}`} {...props} />;
+  return <h3 className={`text-subheading font-semibold ${className}`} {...props} />;
 }
 
 export function CardContent({ className = "", ...props }: HTMLAttributes<HTMLDivElement>) {

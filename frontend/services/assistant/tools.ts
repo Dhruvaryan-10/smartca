@@ -17,7 +17,8 @@
 //     projected down to the few fields an assistant needs. Its free text is UNTRUSTED data.
 import { retrieveTaxLaw } from "../tax-retrieval";
 import type { InsufficientReason, SectionResolution, TaxEvidence, TaxRetrievalInput, TaxRetrievalResult } from "../tax-retrieval";
-import { computeTax, parseTaxRequest } from "../tax";
+import { computeTax, getLatestSavedTaxComputation, parseTaxRequest } from "../tax";
+import type { LatestSavedTaxComputation } from "../tax";
 import { listTransactions } from "../transactions";
 import { NotAuthenticatedError, ValidationError } from "../errors";
 import {
@@ -34,10 +35,11 @@ import {
   readQueryTransactionsArgs,
   readSearchTaxLawArgs,
   readSimulateTaxArgs,
+  readSavedTaxComputationArgs,
 } from "@/lib/assistant/args";
 import type { TransactionFilter } from "@/lib/assistant/args";
 import { AssistantFailure } from "@/lib/assistant/failure";
-import { ASSISTANT_TOOL_NAMES, COMPARISON_NOTICE, LEDGER_DATA_NOTICE } from "@/lib/assistant/tool-contract";
+import { ASSISTANT_TOOL_NAMES, COMPARISON_NOTICE, LEDGER_DATA_NOTICE, SAVED_COMPUTATION_NOTICE } from "@/lib/assistant/tool-contract";
 import type { ToolName } from "@/lib/assistant/tool-contract";
 import { summarize } from "@/lib/summary";
 import type { SummaryTransaction } from "@/lib/summary";
@@ -49,6 +51,7 @@ import {
   calculateTax,
   scenarioDelta,
 } from "@/tax-engine";
+import { getSupportedAssessmentYearLabels } from "@/tax-engine";
 import type { ComparisonInput, RegimeComparison, ScenarioDelta, TaxRegime, TaxResult } from "@/tax-engine";
 
 // ---------------------------------------------------------------------
@@ -57,7 +60,7 @@ import type { ComparisonInput, RegimeComparison, ScenarioDelta, TaxRegime, TaxRe
 
 // The names and the two notices live in a module with no imports (lib/assistant/tool-contract.ts), so that code which only
 // talks about the tools does not have to import this file and, through it, the database. They are re-exported unchanged.
-export { ASSISTANT_TOOL_NAMES, COMPARISON_NOTICE, LEDGER_DATA_NOTICE };
+export { ASSISTANT_TOOL_NAMES, COMPARISON_NOTICE, LEDGER_DATA_NOTICE, SAVED_COMPUTATION_NOTICE };
 export type { ToolName };
 
 /** Why a tool declined. Retrieval's own typed reasons are passed through unchanged. */
@@ -67,6 +70,7 @@ export type ToolRefusalReason =
   | "unsupported_tax_rule"
   | "scenario_mismatch"
   | "too_many_transactions"
+  | "no_saved_computation"
   | InsufficientReason;
 
 /** Either a deterministic result, or a typed refusal. Nothing in between: a refusal never carries a partial answer. */
@@ -220,6 +224,8 @@ export type CompareTaxRegimesResult = {
   comparison: RegimeComparison;
   notice: string;
 };
+/** The person's newest saved computation, as saved: no row or run id. */
+export type SavedTaxComputationResult = Omit<LatestSavedTaxComputation, never> & { notice: string };
 export type SimulateTaxResult = { regime: TaxRegime; base: { input: ComparisonInput }; scenario: { input: ComparisonInput }; delta: ScenarioDelta };
 
 // ---------------------------------------------------------------------
@@ -231,17 +237,23 @@ export type AssistantToolDeps = {
   retrieve?: (input: TaxRetrievalInput) => Promise<TaxRetrievalResult>;
   /** The caller's own ledger. Code chooses it; the model never does. It receives the userId and nothing else. */
   listTransactions?: (userId: string) => Promise<LedgerRow[]>;
+  /** The caller's own newest saved computation. Code chooses it; the model never does. It receives the userId and a year label. */
+  getLatestSavedTaxComputation?: (userId: string, assessmentYear?: string) => Promise<LatestSavedTaxComputation | null>;
 };
 
 export function createAssistantTools(deps: AssistantToolDeps = {}) {
   const retrieve = deps.retrieve ?? ((input: TaxRetrievalInput) => retrieveTaxLaw(input));
   const readLedger = deps.listTransactions ?? listTransactions;
+  const readSaved = deps.getLatestSavedTaxComputation ?? getLatestSavedTaxComputation;
 
   return {
     search_tax_law: async (userId: string, args: unknown): Promise<ToolResult<SearchTaxLawResult>> => {
       requireUser(userId);
       return guarded("search_tax_law", async () => {
-        const { question, assessmentYear, sectionRef } = readSearchTaxLawArgs(args);
+        const read = readSearchTaxLawArgs(args);
+        // No year given: the newest year the engine supports, which is the corpus year. Never a clock.
+        const assessmentYear = read.assessmentYear ?? [...getSupportedAssessmentYearLabels()].sort().at(-1) ?? "";
+        const { question, sectionRef } = read;
         const found = await retrieve({ question, assessmentYear, ...(sectionRef === undefined ? {} : { sectionRef }) });
         if (found.status === "insufficient_evidence") {
           return refusal("search_tax_law", found.reason, `No usable evidence: ${found.reason}.`, {
@@ -267,9 +279,11 @@ export function createAssistantTools(deps: AssistantToolDeps = {}) {
     query_transactions: async (userId: string, args: unknown): Promise<ToolResult<QueryTransactionsResult>> => {
       requireUser(userId);
       return guarded("query_transactions", async () => {
-        const { limit, includeDescription, ...filter } = readQueryTransactionsArgs(args);
-        const matched = selectTransactions(await readLedger(userId), filter);
-        if (matched === null) return tooMany("query_transactions");
+        const { limit, includeDescription, sort, ...filter } = readQueryTransactionsArgs(args);
+        const selected = selectTransactions(await readLedger(userId), filter);
+        if (selected === null) return tooMany("query_transactions");
+        // Newest first as stored; "amount" orders largest first (ties newest first), so the first row IS the largest.
+        const matched = sort === "amount" ? [...selected].sort((a, b) => b.amountPaise - a.amountPaise || (a.occurredOn < b.occurredOn ? 1 : a.occurredOn > b.occurredOn ? -1 : 0)) : selected;
 
         let incomePaise = 0;
         let expensePaise = 0;
@@ -296,6 +310,7 @@ export function createAssistantTools(deps: AssistantToolDeps = {}) {
         return okResult("query_transactions", {
           filter,
           descriptionsIncluded: includeDescription,
+          sortedBy: sort,
           matched: matched.length,
           returned: transactions.length,
           truncated: matched.length > transactions.length,
@@ -374,6 +389,17 @@ export function createAssistantTools(deps: AssistantToolDeps = {}) {
           comparison: computed.comparison,
           notice: COMPARISON_NOTICE,
         });
+      });
+    },
+
+    get_saved_tax_computation: async (userId: string, args: unknown): Promise<ToolResult<SavedTaxComputationResult>> => {
+      requireUser(userId);
+      return guarded("get_saved_tax_computation", async () => {
+        const { assessmentYear } = readSavedTaxComputationArgs(args);
+        // Read only, and only the session user's own rows (services/tax.ts filters by userId). Nothing is recomputed.
+        const saved = await readSaved(userId, assessmentYear ?? undefined);
+        if (saved === null) return refusal("get_saved_tax_computation", "no_saved_computation", "The person has no saved tax computation for this assessment year.");
+        return okResult("get_saved_tax_computation", { ...saved, notice: SAVED_COMPUTATION_NOTICE });
       });
     },
 

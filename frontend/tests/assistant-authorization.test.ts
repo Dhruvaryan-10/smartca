@@ -88,7 +88,7 @@ test("a narrower grant narrows the tools: a tool is usable only when every class
   assert.deepEqual(noFinancial.allowedTools, ["search_tax_law"]);
   assert.deepEqual(noFinancial.dataClasses, ["user_free_text", "tax_corpus_text", "system_value"]);
   const noCorpus = resolveAuthorization(FULL_PROFILE, grant({ dataClasses: ["user_free_text", "user_financial_data", "system_value"] }), CONTEXT);
-  assert.deepEqual(noCorpus.allowedTools, ["query_transactions", "get_financial_summary", "calculate_tax", "compare_tax_regimes", "simulate_tax"]);
+  assert.deepEqual(noCorpus.allowedTools, ["query_transactions", "get_financial_summary", "calculate_tax", "compare_tax_regimes", "simulate_tax", "get_saved_tax_computation"]);
   for (const tool of noCorpus.allowedTools) assert.ok(classesReturnedBy(tool).every((c) => noCorpus.dataClasses.includes(c)), tool);
 });
 

@@ -19,7 +19,8 @@ edited. Its exit code does not depend on the scores: **no pass thresholds are se
 ```
 rag-evals/
   README.md                       this file
-  ay-2026-27-v1/                  one directory per dataset version
+  ay-2026-27-v1/                  one directory per dataset version (v1: corpus ay-2026-27-v1, kept as recorded)
+  ay-2026-27-v2/                  the current dataset (corpus ay-2026-27-v2); see its meta.json provenance
     meta.json                     version, the corpus version it targets, dev/test membership, the test-set freeze
     gold-evidence.json            what counts as the right passage (46 definitions)
     cases.json                    the 56 cases

@@ -47,6 +47,8 @@ export const GOVERNING_ACT_1961 = "Income-tax Act, 1961";
 
 /** A chunk is at most this many characters (a single very long line is split at a sentence or space). */
 export const MAX_CHUNK_CHARS = 1400;
+/** A known-gap question phrase: 2 to 6 lower-case words (letters, digits, hyphens), single spaces. */
+const GAP_PHRASE = /^[a-z0-9-]+(?: [a-z0-9-]+){1,5}$/;
 const MIN_SPLIT_PROGRESS = 200;
 
 // ---------------------------------------------------------------------
@@ -81,7 +83,12 @@ export type ManifestSource = {
   sections: ManifestSection[];
 };
 
-export type KnownGap = { sectionRef: string; title: string; reason: string };
+/**
+ * A provision the corpus does not cover. `questionPhrases` (optional): lower-case phrases that mean a question is ABOUT this gap
+ * ("standard deduction"). Retrieval refuses such a question unless a passage it returns contains the phrase itself, so generic
+ * words the question shares with an unrelated passage ("deduction", "salaried") cannot make the gap look covered.
+ */
+export type KnownGap = { sectionRef: string; title: string; reason: string; questionPhrases?: string[] };
 
 export type CorpusManifest = {
   corpusVersion: string;
@@ -401,7 +408,16 @@ export function buildCorpus(manifestInput: unknown, readSource: (file: string) =
   else {
     m.knownGaps.forEach((gap, i) => {
       if (!isRecord(gap) || !isText(gap.sectionRef) || !isText(gap.title) || !isText(gap.reason)) issues.push(`knownGaps[${i}] needs sectionRef, title and reason.`);
-      else knownGaps.push({ sectionRef: gap.sectionRef, title: gap.title, reason: gap.reason });
+      else {
+        unknownKeys(gap, ["sectionRef", "title", "reason", "questionPhrases"], `knownGaps[${i}]`, issues);
+        const phrases = gap.questionPhrases;
+        if (phrases !== undefined && (!Array.isArray(phrases) || !phrases.every((p) => typeof p === "string" && GAP_PHRASE.test(p)))) {
+          issues.push(`knownGaps[${i}].questionPhrases must be a list of lower-case phrases of 2 to 6 words.`);
+        } else {
+          // Only when the manifest states it: an older manifest normalises, and so hashes, exactly as it always did.
+          knownGaps.push({ sectionRef: gap.sectionRef, title: gap.title, reason: gap.reason, ...(phrases === undefined ? {} : { questionPhrases: phrases as string[] }) });
+        }
+      }
     });
   }
 

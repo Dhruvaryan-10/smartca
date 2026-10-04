@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { requireUserId } from "../services/session";
 import { NotAuthenticatedError, NotFoundError, ValidationError } from "../services/errors";
-import { respondToError } from "../app/api/_lib/respond-error";
+import { loggableError, respondToError } from "../app/api/_lib/respond-error";
 import { hashPassword, verifyPassword, createUser, findUserByEmail } from "../services/users";
 import { EmailAlreadyRegisteredError } from "../services/errors";
 import { deleteTestUser, makeTestUser } from "./helpers";
@@ -45,6 +45,30 @@ test("A. unexpected errors map to a generic 500, never the raw error", async () 
   assert.equal(res.status, 500);
   const body = await res.json();
   assert.equal(body.error, "Internal server error");
+});
+
+test("A. an unexpected error is logged as class, database code and stack frames only, never its message", () => {
+  // The shape Drizzle throws: the message echoes the statement and its parameters; the pg error is the cause.
+  const secretParams = "params: qa@example.test,$2a$10$abcdefghijklmnopqrstuv,Rent,250000";
+  const err = new Error(`Failed query: insert into "users" ... ${secretParams}`, { cause: Object.assign(new Error("boom"), { code: "57P01" }) });
+  const logged = loggableError(err);
+  assert.equal(logged.name, "Error");
+  assert.equal(logged.pgCode, "57P01");
+  assert.ok(logged.frames && logged.frames.includes("at "), "stack frames are kept for debugging");
+  const text = JSON.stringify(logged);
+  for (const leak of ["qa@example.test", "$2a$10$", "Rent", "250000", "insert into"]) assert.ok(!text.includes(leak), leak);
+
+  const originalError = console.error;
+  const lines: unknown[][] = [];
+  console.error = (...args: unknown[]) => void lines.push(args);
+  try {
+    respondToError(err);
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(lines.length, 1);
+  assert.ok(!JSON.stringify(lines[0]).includes("qa@example.test") && !JSON.stringify(lines[0]).includes("$2a$10$"));
+  assert.deepEqual(loggableError("a string"), { name: "string" });
 });
 
 // --- J. Password security -------------------------------------------------

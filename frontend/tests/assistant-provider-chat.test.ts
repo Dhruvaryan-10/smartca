@@ -457,3 +457,14 @@ test("the driver holds no key: it renders nothing secret, and the configuration'
   const config = external();
   assert.equal([String(config), JSON.stringify(config), inspect(config, { depth: 5 })].join("\n").includes(KEY), false);
 });
+
+test("a tool call written as text (<tool_call> markup) is refused as an invalid response, never shown as an answer", async () => {
+  // Seen from a real local model: '{"name": "get_financial_summary", "arguments": {}} </tool_call>' came back as the final text.
+  const { decodeChatCompletion } = await import("../services/assistant/provider-chat-completions");
+  for (const content of [' Ronaldo {"name": "get_financial_summary", "arguments": {}} </tool_call>', '<tool_call>{"name":"x"}</tool_call>', "<TOOL_CALL>"]) {
+    const body = JSON.stringify({ model: "m", choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }] });
+    assert.throws(() => decodeChatCompletion(body), /tool call as text/);
+  }
+  const ok = JSON.stringify({ model: "m", choices: [{ index: 0, message: { role: "assistant", content: "Your income is ₹1,50,000." }, finish_reason: "stop" }] });
+  assert.deepEqual(decodeChatCompletion(ok).response, { kind: "text", text: "Your income is ₹1,50,000." });
+});

@@ -84,7 +84,7 @@ test("the mutation boundary: every tool has an explicit effect, none writes, and
   assert.deepEqual(Object.keys(ASSISTANT_TOOL_EFFECTS).sort(), [...ASSISTANT_TOOL_NAMES].sort());
   assert.deepEqual({ ...ASSISTANT_TOOL_EFFECTS }, {
     search_tax_law: "read", query_transactions: "read", get_financial_summary: "read",
-    calculate_tax: "calculate", compare_tax_regimes: "calculate", simulate_tax: "simulate",
+    calculate_tax: "calculate", compare_tax_regimes: "calculate", simulate_tax: "simulate", get_saved_tax_computation: "read",
   });
   const profiles = fs.readFileSync(path.join(FRONTEND, "lib/assistant/profiles.ts"), "utf8");
   const orchestrator = fs.readFileSync(path.join(FRONTEND, "services/assistant/orchestrator.ts"), "utf8");

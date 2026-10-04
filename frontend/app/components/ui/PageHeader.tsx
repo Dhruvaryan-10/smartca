@@ -15,8 +15,8 @@ export function PageHeader({
   return (
     <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
       <div className="min-w-0">
-        <h1 className="text-[28px] font-semibold leading-9 tracking-[-0.02em] text-foreground">{title}</h1>
-        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+        <h1 className="font-display text-title font-semibold text-foreground">{title}</h1>
+        {description && <p className="mt-1 text-body text-foreground-muted">{description}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </div>
@@ -39,9 +39,9 @@ export function Section({
 }) {
   return (
     <section className={className}>
-      <div className="mb-3 flex items-baseline justify-between gap-4">
-        <h2 className="text-[15px] font-semibold tracking-tight text-foreground">{title}</h2>
-        {aside && <div className="text-[13px] text-muted-foreground">{aside}</div>}
+      <div className="mb-stack flex items-baseline justify-between gap-4">
+        <h2 className="text-subheading font-semibold text-foreground">{title}</h2>
+        {aside && <div className="text-label text-foreground-muted">{aside}</div>}
       </div>
       {children}
     </section>

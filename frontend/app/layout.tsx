@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { auth } from "@/auth";
 import Providers from "./providers";
 import "./globals.css";
@@ -12,10 +12,18 @@ const geist = Geist({
   variable: "--font-geist",
 });
 
+// Technical text only (engine and rules versions, identifiers). Not
+// preloaded: most views never render it.
+const geistMono = Geist_Mono({
+  subsets: ["latin"],
+  variable: "--font-geist-mono",
+  preload: false,
+});
+
 export const metadata: Metadata = {
-  title: "SmartCA | AI Finance & Tax Management",
+  title: "SmartCA",
   description:
-    "SmartCA helps you manage income, expenses, taxes and financial insights with AI-powered automation.",
+    "A calm ledger for your income, spending and tax. SmartCA does the arithmetic, compares both tax regimes and shows every step.",
 };
 
 // Applies a saved theme preference before first paint (no flash of the
@@ -38,11 +46,11 @@ export default async function RootLayout({
   const session = await auth();
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en-IN" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className={`${geist.variable} antialiased`}>
+      <body className={`${geist.variable} ${geistMono.variable} antialiased`}>
         <Providers session={session}>{children}</Providers>
       </body>
     </html>
