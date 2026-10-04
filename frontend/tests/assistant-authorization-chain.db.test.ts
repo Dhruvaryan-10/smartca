@@ -125,7 +125,8 @@ test("renewing consent restores the run: after an outdated, then a revoked grant
     assert.deepEqual([r.status, r.body.ok], [200, true]);
     assert.equal(sent.length, 1, "one provider request, from the registry's driver");
     const body = JSON.parse(sent[0]) as Record<string, unknown>;
-    assert.deepEqual(Object.keys(body).sort(), ["max_completion_tokens", "messages", "model", "tools"], "the configured wire format's cap field, and nothing else");
+    assert.deepEqual(Object.keys(body).sort(), ["max_completion_tokens", "messages", "model", "store", "tools"], "the configured wire format's cap field, store, and nothing else");
+    assert.equal(body.store, false, "never stored by the provider");
     assert.equal(body.max_completion_tokens, 512);
     assert.doesNotMatch(sent[0], new RegExp(`${u}|authorization|inventory|session`, "i"));
   });

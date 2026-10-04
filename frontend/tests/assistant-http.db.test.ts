@@ -288,26 +288,43 @@ test("a request whose client is already gone reaches no provider and holds no sl
 
 // --- configuration ----------------------------------------------------------------------------------------------------------------
 
-test("the route's default configuration comes from the environment and still refuses external mode: 503, recorded, no provider call", async () => {
+test("the route's default configuration comes from the environment: off, incomplete or loopback external is 503 with no provider call; complete external answers", async () => {
   const names = [...ASSISTANT_ENV_NAMES, ...ASSISTANT_PROVIDER_ENV_NAMES, ...ASSISTANT_LIMIT_ENV_NAMES, ...ASSISTANT_RETENTION_ENV_NAMES];
   const before = Object.fromEntries(names.map((n) => [n, process.env[n]]));
+  const setEnv = (env: Record<string, string | undefined>) => {
+    for (const n of names) delete process.env[n];
+    for (const [n, v] of Object.entries(env)) if (v !== undefined) process.env[n] = v;
+  };
   try {
     await withUsers(1, async ([u]) => {
       await consent(u);
       const provider = testProvider(done);
       const call = () => handleAssistantHttp(post(BODY), { getSessionUserId: async () => u, driver: provider.driver, now: () => NOW }); // no `config`: the route's default
-      for (const n of names) delete process.env[n];
+      setEnv({});
       let response = await call();
       assert.deepEqual([response.status, codeOf(await response.json())], [503, "assistant_unavailable"], "unset: off");
-      Object.assign(process.env, ENV); // a complete, valid external environment
+      setEnv({ ...ENV, MODEL_WIRE_FORMAT: undefined }); // external, one required variable missing
       response = await call();
-      const text = await response.text();
-      assert.deepEqual([response.status, codeOf(JSON.parse(text))], [503, "assistant_misconfigured"], "external mode is refused by the reader");
+      let text = await response.text();
+      assert.deepEqual([response.status, codeOf(JSON.parse(text))], [503, "assistant_misconfigured"], "incomplete external is refused");
       noSecretsIn(text);
-      assert.equal(provider.calls.length, 0);
+      setEnv({ ...ENV, MODEL_ENDPOINT: "https://127.0.0.1:11434/v1/chat/completions" }); // external pointed at this machine
+      response = await call();
+      text = await response.text();
+      assert.deepEqual([response.status, codeOf(JSON.parse(text))], [503, "assistant_misconfigured"], "a loopback endpoint is refused under external");
+      noSecretsIn(text);
+      assert.equal(provider.calls.length, 0, "no refused configuration reaches the provider");
+      setEnv(ENV); // a complete, valid external environment
+      response = await call();
+      text = await response.text();
+      assert.equal(response.status, 200, text);
+      noSecretsIn(text);
+      assert.ok(provider.calls.length > 0, "a complete external configuration reaches the provider");
       assert.deepEqual((await runsOf(u)).map((r) => [r.status, r.resultCode, r.failureKind]), [
         ["rejected", "assistant_unavailable", "AssistantConfigError:assistant_disabled"],
-        ["rejected", "assistant_misconfigured", "AssistantConfigError:real_data_mode_not_permitted"],
+        ["rejected", "assistant_misconfigured", "AssistantConfigError:missing_configuration"],
+        ["rejected", "assistant_misconfigured", "AssistantConfigError:invalid_configuration"],
+        ["succeeded", null, null],
       ]);
     });
   } finally {

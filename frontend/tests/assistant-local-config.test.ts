@@ -1,7 +1,7 @@
 // The LOCAL configuration (services/assistant/config.ts, validateLocalEnv; docs/decisions/0005). PURE: no database, no network.
 // What is pinned: local mode is the external configuration with ONE difference, a loopback-only endpoint, so nothing it builds can
-// reach another machine; every other external requirement still applies; external mode itself is still refused; errors name variables,
-// never values.
+// reach another machine; every other external requirement still applies; a local configuration's loopback endpoint is refused under
+// external mode, so a production deployment cannot use the local model by mistake; errors name variables, never values.
 import { inspect } from "node:util";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -95,9 +95,15 @@ test("every limit, the token cap, the wire format and the retention are still re
   assert.equal(refused({ ...LOCAL, ASSISTANT_MAX_CONCURRENT_RUNS: "5", ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS: "4" }).code, "invalid_configuration");
 });
 
-test("external mode is still refused by the reader, and the external validator still demands https", () => {
-  assert.equal(refused({ ...LOCAL, ASSISTANT_ENV: "external", MODEL_ENDPOINT: "https://provider.invalid/v1" }).code, "real_data_mode_not_permitted");
-  assert.throws(() => validateExternalEnv({ ...LOCAL, ASSISTANT_ENV: "external" }), (e: unknown) => e instanceof AssistantConfigError && e.variables.includes("MODEL_ENDPOINT"));
+test("a local configuration switched to external mode is refused: the external validator demands https and a host off this machine", () => {
+  // The local endpoint as-is (http, loopback), and the same host over https: both refused under external, by the reader and the validator.
+  for (const endpoint of [LOCAL.MODEL_ENDPOINT, "https://127.0.0.1:11434/v1/chat/completions", "https://[::1]:11434/v1/chat/completions", "https://localhost:11434/v1/chat/completions"]) {
+    const error = refused({ ...LOCAL, ASSISTANT_ENV: "external", MODEL_ENDPOINT: endpoint });
+    assert.deepEqual([error.code, error.variables], ["invalid_configuration", ["MODEL_ENDPOINT"]], endpoint);
+    assert.throws(() => validateExternalEnv({ ...LOCAL, ASSISTANT_ENV: "external", MODEL_ENDPOINT: endpoint }), (e: unknown) => e instanceof AssistantConfigError && e.variables.includes("MODEL_ENDPOINT"), endpoint);
+  }
+  // With a hosted https endpoint, the same values are a valid external configuration, and no longer a local one.
+  assert.equal((readAssistantConfig({ ...LOCAL, ASSISTANT_ENV: "external", MODEL_ENDPOINT: "https://provider.invalid/v1" }) as { env?: string }).env, "external");
   assert.throws(() => validateLocalEnv({ ...LOCAL, ASSISTANT_ENV: "external" }), (e: unknown) => e instanceof AssistantConfigError && e.variables.includes("ASSISTANT_ENV"));
   for (const mode of ["LOCAL", "local ", "production", "real"]) {
     assert.equal(refused({ ...LOCAL, ASSISTANT_ENV: mode }).code, "real_data_mode_not_permitted", mode);

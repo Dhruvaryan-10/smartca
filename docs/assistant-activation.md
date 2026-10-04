@@ -5,20 +5,22 @@ password into it or into any tracked file.
 
 ## Why the panel says "The assistant is not available"
 
-That message is correct behaviour, from two independent gates:
+That message means the environment the server runs with does not enable the assistant: `ASSISTANT_ENABLED` is unset, empty or
+`false`. `readAssistantConfig` returns "disabled", and every assistant and consent request is refused as `assistant_unavailable`.
+That category is "configuration", so the panel shows its not-available state. On a host such as Vercel, the variables must be set
+for the right environment (Production) and a new deployment made; a running deployment keeps the values it was built with.
 
-1. **The local environment doesn't enable it.** `frontend/.env.local` sets none of the assistant variables, so
-   `ASSISTANT_ENABLED` is unset. `readAssistantConfig` returns "disabled", and every assistant and consent request is refused
-   as `assistant_unavailable`. That category is "configuration", so the panel shows its not-available state.
-2. **External mode is refused by design.** `readAssistantConfig` (`frontend/services/assistant/config.ts`) accepts only
-   `ASSISTANT_ENV=synthetic` and refuses every other value, `external` included, with `real_data_mode_not_permitted`.
-   [ADR 0004](decisions/0004-assistant-provider-integration.md) item 4 (accepted) keeps it that way until the
-   [ADR 0002](decisions/0002-assistant-egress-policy.md) assessment of the chosen provider is recorded. Opening it is a single,
-   reviewed change to that function, not a new code path. Tests pin the refusal (`assistant-config.test.ts`,
-   `assistant-external.test.ts`, `assistant-external-config.test.ts`, `assistant-http.db.test.ts`).
+If the assistant is enabled but a variable is missing or invalid, the panel says "The assistant is not set up correctly."
+(`assistant_misconfigured`) instead. The error names the variable server-side, never its value; `npm run assistant:preflight` prints
+which.
 
-`npm run assistant:preflight` reports both gates, printing names only:
-`external configuration: assistant_disabled` and `activation gate: external mode is refused by readAssistantConfig`.
+**External mode is open** (2026-10-04, [ADR 0004](decisions/0004-assistant-provider-integration.md) "Amendment"):
+`readAssistantConfig` (`frontend/services/assistant/config.ts`) accepts `ASSISTANT_ENV=external` by returning
+`validateExternalEnv(env)`, so only a complete, valid external configuration is produced. Its endpoint must be https and must not be a
+host on the application's own machine, so a local model cannot be reached under external mode by mistake. The
+[ADR 0002](decisions/0002-assistant-egress-policy.md) assessment of the chosen provider is now the precondition of the *configuration*:
+set `MODEL_APPROVED_RECIPIENTS` only after it is recorded. Tests pin the rule (`assistant-external-config.test.ts`,
+`assistant-local-config.test.ts`, `assistant-http.db.test.ts`, `assistant-preflight.test.ts`).
 
 ## The real request path (already implemented)
 
@@ -42,10 +44,10 @@ Figures come only from tool results. The model's text is labelled "Explanation" 
 | Variable | Meaning |
 |---|---|
 | `ASSISTANT_ENABLED` | `true` to turn the assistant on |
-| `ASSISTANT_ENV` | `external` for a real provider, once the gate is opened |
-| `MODEL_ENDPOINT` | The provider's OpenAI-compatible Chat Completions URL: `https` only, no credentials in it |
+| `ASSISTANT_ENV` | `external` for a hosted provider |
+| `MODEL_ENDPOINT` | The provider's full OpenAI-compatible Chat Completions URL: `https` only, no credentials in it, never `localhost` or a loopback address |
 | `MODEL_API_KEY` | The provider key. A secret: never commit it; it is held in a redacting wrapper server-side |
-| `MODEL_ID` | The model identifier at that provider |
+| `MODEL_ID` | The model identifier at that provider: letters, digits, `.` `_` `:` `-`, at most 64 characters, no `/` |
 | `MODEL_APPROVED_RECIPIENTS` | Exactly one recipient id, added only after the ADR 0002 assessment |
 | `MODEL_TIMEOUT_MS` | Per-call timeout |
 | `MODEL_MAX_OUTPUT_CHARS` | Longest answer accepted |
@@ -72,10 +74,13 @@ and anything missing fails closed, naming the variable and never its value.
    self-hosted server behind https).
 2. **Record the ADR 0002 assessment** of that provider in ADR 0002: retention, training use, sub-processors and fallbacks,
    processing location, and who verified them. Settle the open consent-mechanics and legal-review questions there too.
-3. **Make the reviewed gate change.** In `readAssistantConfig`, accept `ASSISTANT_ENV=external` by returning
-   `validateExternalEnv(env)`. That function already validates the complete external configuration. Update the tests that pin
-   the refusal so they pin the new rule instead. This is the reviewed change ADR 0004 describes; it is deliberately not made yet.
-4. **Configure** the variables above in `frontend/.env.local` locally, or in the host's secret store in production.
+   *Status 2026-10-04:* OpenAI API chosen; facts recorded in ADR 0002 "Provider assessment: OpenAI API", including its open
+   considerations (stored completions, 30-day abuse monitoring, processing location, reasoning tokens in the output cap); owner
+   sign-off pending.
+3. **The reviewed gate change** is made (2026-10-04, ADR 0004 "Amendment"): `readAssistantConfig` accepts `ASSISTANT_ENV=external`
+   by returning `validateExternalEnv(env)`. Do not set `MODEL_APPROVED_RECIPIENTS` in a deployment until step 2 is recorded.
+4. **Configure** the variables above in `frontend/.env.local` locally, or in the host's secret store in production (on Vercel:
+   Project → Settings → Environment Variables, scoped to Production, then redeploy).
 5. **Prove readiness:** `npm run assistant:preflight` must print `Ready.` It contacts no provider.
 6. **Verify end to end:** sign in, open Ask SmartCA, grant consent from the disclosure, ask a ledger question ("How much did I
    spend this month?") and a tax question ("Explain my latest tax calculation"), and check that the figures carry the ledger and

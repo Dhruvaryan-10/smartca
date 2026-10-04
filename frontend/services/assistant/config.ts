@@ -2,8 +2,9 @@
 // imports it (a test pins that), no variable is NEXT_PUBLIC_, and it prints nothing.
 //
 //   ASSISTANT_ENABLED=false          off unless exactly "true"
-//   ASSISTANT_ENV=synthetic          or "local" (below); ANY other value, "external" included, fails closed
-//   MODEL_ENDPOINT=                  an https address, with no credentials in it (local mode: a loopback address, see below)
+//   ASSISTANT_ENV=synthetic          or "external" or "local" (below); ANY other value fails closed
+//   MODEL_ENDPOINT=                  an https address, with no credentials in it (external mode: never a loopback host; local mode: only a
+//                                    loopback address, see below)
 //   MODEL_API_KEY=                   the secret; held in a wrapper that cannot be printed or serialised by accident
 //   MODEL_ID=                        the model identifier
 //   MODEL_APPROVED_RECIPIENTS=       comma-separated recipient ids allowed to answer; anything else fails closed
@@ -20,9 +21,10 @@
 //   ASSISTANT_MAX_TOKENS_PER_WINDOW= model tokens (as the provider reports them) one person may use in that window
 //   ASSISTANT_MAX_GLOBAL_CONCURRENT_RUNS= runs in progress across everyone at once
 //   ASSISTANT_RUN_RETENTION_DAYS=    how long run audit metadata is kept (services/assistant/run-retention.ts deletes older rows)
-// and exactly one approved recipient. readAssistantConfig still REFUSES external mode (ADR 0002: until a provider is assessed and
-// the consent mechanics are decided), so validateExternalEnv is reachable only from tests; enabling external mode is a reviewed
-// change to readAssistantConfig, not a new code path.
+// and exactly one approved recipient. readAssistantConfig accepts ASSISTANT_ENV=external by returning validateExternalEnv (the reviewed
+// change ADR 0004 item 4 describes; see its 2026-10-04 note). The endpoint must be https and must not be a loopback host, so a local
+// model's address cannot be used under external mode by mistake. ADR 0002 item 8 is enforced at MODEL_APPROVED_RECIPIENTS: a recipient
+// is set only after the provider's assessment is recorded there.
 //
 // A LOCAL configuration (validateLocalEnv, ASSISTANT_ENV=local, docs/decisions/0005) is the external configuration in every respect
 // (every variable above, exactly one recipient, every limit, the same provider path, consent, tools and egress filter) except the
@@ -130,8 +132,8 @@ export class Secret {
 }
 
 /**
- * The configuration. `env: "external"` exists as a TYPE only, for services/assistant/external.ts: readAssistantConfig never produces it
- * (any ASSISTANT_ENV but "synthetic" still fails closed), so no environment can reach an external model through this reader.
+ * The configuration. readAssistantConfig produces `env: "external"` only through validateExternalEnv, so an external configuration is
+ * always a complete, validated one.
  */
 type ModelSettings = {
   enabled: true;
@@ -163,6 +165,18 @@ function endpointOf(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * A host on this machine, as URL normalises it: "localhost" and its subdomains (with or without the trailing dot), 127.0.0.0/8 (URL turns
+ * "127.1" and "2130706433" into dotted form), the unspecified addresses, and IPv6 loopback, including the IPv4-mapped form.
+ */
+const LOCAL_MACHINE_HOST = /^(?:(?:[^.]+\.)*localhost\.?|127\.\d+\.\d+\.\d+|0\.0\.0\.0|\[::1?\]|\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\])$/i;
+
+/** An external endpoint: https, no credentials (endpointOf), and never a host on this machine, which only local mode may use. */
+function hostedEndpointOf(value: string): string | null {
+  const endpoint = endpointOf(value);
+  return endpoint !== null && !LOCAL_MACHINE_HOST.test(new URL(endpoint).hostname) ? endpoint : null;
 }
 
 /** Hosts a local configuration may use: loopback IP literals only (URL keeps IPv6 in brackets). Not "localhost": a name can be re-pointed. */
@@ -203,8 +217,8 @@ function boundedInteger(value: string, max: number): number | null {
 
 /**
  * Reads the configuration from `env` (process.env by default). Off unless ASSISTANT_ENABLED is exactly "true". When on, the mode
- * must be "synthetic" (checked first, so a real-data request is refused whatever else is missing), every other variable must be
- * present, and every value must be valid; otherwise this throws an AssistantConfigError and returns nothing.
+ * must be "synthetic", "external" or "local" (checked first, so an unknown mode is refused whatever else is missing), every variable
+ * that mode needs must be present, and every value must be valid; otherwise this throws an AssistantConfigError and returns nothing.
  */
 export function readAssistantConfig(env: Readonly<Record<string, string | undefined>> = process.env): AssistantConfig {
   const enabled = env.ASSISTANT_ENABLED;
@@ -214,6 +228,8 @@ export function readAssistantConfig(env: Readonly<Record<string, string | undefi
   const mode = env.ASSISTANT_ENV;
   // A model on this machine (docs/decisions/0005). Validated exactly as an external configuration, with a loopback endpoint.
   if (mode === "local") return validateLocalEnv(env);
+  // A hosted provider (ADR 0004 item 4): the complete external configuration, validated, or nothing.
+  if (mode === "external") return validateExternalEnv(env);
   if (mode !== undefined && mode !== "" && mode !== "synthetic") throw new AssistantConfigError("real_data_mode_not_permitted", ["ASSISTANT_ENV"]);
 
   return Object.freeze({ env: "synthetic" as const, ...readModelSettings(env) });
@@ -271,13 +287,14 @@ export function readRunRetentionDays(env: Readonly<Record<string, string | undef
 
 /**
  * Validates an EXTERNAL configuration: enabled, ASSISTANT_ENV=external, every model variable, exactly one approved recipient (fallback
- * recipients are undecided), the provider's output-token cap and wire format, every limit (per user and global) and the run retention. Fails closed, naming variables and never values. NOT used by
- * readAssistantConfig, which still refuses external mode: nothing but tests reaches this until that is deliberately changed.
+ * recipients are undecided), the provider's output-token cap and wire format, every limit (per user and global) and the run retention.
+ * The endpoint is https and never a host on this machine (hostedEndpointOf). Fails closed, naming variables and never values. Reached
+ * through readAssistantConfig when ASSISTANT_ENV=external, and by the preflight.
  */
 export function validateExternalEnv(env: Readonly<Record<string, string | undefined>>): ExternalAssistantConfig {
   if (env.ASSISTANT_ENABLED !== "true") throw new AssistantConfigError("assistant_disabled");
   if (env.ASSISTANT_ENV !== "external") throw new AssistantConfigError("invalid_configuration", ["ASSISTANT_ENV"]);
-  return Object.freeze({ ...readProviderSettings(env, endpointOf), env: "external" as const });
+  return Object.freeze({ ...readProviderSettings(env, hostedEndpointOf), env: "external" as const });
 }
 
 /**

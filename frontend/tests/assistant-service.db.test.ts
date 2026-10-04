@@ -9,7 +9,7 @@ import { db } from "../db/client";
 import { assistantRuns } from "../db/schema";
 import { handleAssistantRequest } from "../services/assistant/service";
 import type { AssistantEvent } from "../services/assistant/events";
-import { readAssistantConfig, validateExternalEnv } from "../services/assistant/config";
+import { AssistantConfigError, readAssistantConfig, validateExternalEnv } from "../services/assistant/config";
 import type { AssistantConfig } from "../services/assistant/config";
 import { grantAssistantAuthorization, revokeAssistantAuthorization } from "../services/assistant/authorization-store";
 import { createTransaction } from "../services/transactions";
@@ -171,8 +171,9 @@ test("the caller cannot choose profile, tools, classes, recipient, provider, lim
   });
 });
 
-test("external mode is unreachable unless explicitly configured: a synthetic or disabled configuration refuses, and the reader refuses external", async () => {
-  assert.throws(() => readAssistantConfig(ENV));
+test("external mode is unreachable unless explicitly configured: a synthetic or disabled configuration refuses, and the reader yields external only from a complete environment", async () => {
+  assert.deepEqual(readAssistantConfig(ENV), external());
+  assert.throws(() => readAssistantConfig({ ...ENV, ASSISTANT_RUN_RETENTION_DAYS: "" }), (e: unknown) => e instanceof AssistantConfigError && e.code === "missing_configuration");
   await withUser(async (u) => {
     await consent(u);
     const synthetic = readAssistantConfig({ ...ENV, ASSISTANT_ENV: "synthetic" });

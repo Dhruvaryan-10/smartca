@@ -27,7 +27,7 @@ async function probeDatabase() {
 async function main() {
   const report = await runAssistantPreflight(process.env, probeDatabase);
   for (const check of report.checks) console.log(`${check.ok ? "PASS" : "FAIL"}  ${check.name}: ${check.detail}`);
-  console.log(report.ready ? "Ready: the configuration and database support external mode (still gated, see above)." : "Not ready.");
+  console.log(report.ready ? "Ready: the configuration and database support external mode (see the activation gate above)." : "Not ready.");
   return report.ready;
 }
 

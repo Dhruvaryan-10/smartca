@@ -1,6 +1,6 @@
 # ADR 0004: Assistant provider integration path and the external-mode gate
 
-**Status:** Accepted (2026-10-02, project owner's choice of integration path and gating). The provider *vendor* and its ADR 0002 assessment remain open.
+**Status:** Accepted (2026-10-02, project owner's choice of integration path and gating). The provider *vendor* and its ADR 0002 assessment remain open. **Item 4 amended 2026-10-04:** the external-mode gate is open (see "Amendment").
 
 ## Context
 
@@ -26,3 +26,18 @@ A wire detail also had to be placed: OpenAI's current Chat Completions reference
 - Switching between OpenAI and a compatible gateway is a configuration change; a provider with a different wire format needs a new driver behind the same registry, and a new listed format name.
 - Every existing external configuration must add `MODEL_WIRE_FORMAT` (none exists outside tests).
 - Still open (ADR 0002, SECURITY.md section 5): the provider vendor and its data terms, processing location, deployment values and a spending ceiling, timeout values, fallback recipients, streaming, and a legal and privacy review.
+## Amendment (2026-10-04): the external-mode gate is open
+
+At the project owner's direction, `readAssistantConfig` now accepts `ASSISTANT_ENV=external` by returning `validateExternalEnv(env)`, the
+single reviewed change item 4 describes, so a hosted deployment can reach a provider. Item 4's order is changed, not its control: the
+ADR 0002 assessment (item 8) is no longer a precondition of the code change; it is the precondition of the configuration. No data can
+reach a provider until a deployment sets `MODEL_APPROVED_RECIPIENTS`, and an operator sets that only after the chosen provider's
+assessment (retention, training use, sub-processors and fallbacks, processing location, who verified them) is recorded in ADR 0002. The
+OpenAI API was chosen on 2026-10-04 and its facts are recorded in ADR 0002 ("Provider assessment: OpenAI API"); the owner's sign-off there
+is **still pending**.
+
+Nothing else changes: every external variable is still required and validated with no defaults, exactly one approved recipient, the
+output-token cap and wire format, every per-user and global limit, run retention, consent read from the database before any limit, tool
+or provider call, the egress filter, the model guard and the answer layer. One rule is added: an external endpoint must not be a host on
+the application's own machine (`localhost` and its subdomains, `127.0.0.0/8`, `0.0.0.0`, `[::]`, `[::1]` and IPv4-mapped loopback), so a
+local model's address (ADR 0005) cannot be used under external mode by mistake. Tests pin the new rule in place of the refusal.

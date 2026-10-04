@@ -2,7 +2,7 @@
 // Chat Completions driver's token field. PURE: no database, no network. Pinned: the format is required by an external configuration, one
 // of a closed list, refused by name and never by value, and ignored by synthetic mode; each format sends the configured cap in exactly one
 // field, chosen by the driver layer alone; nothing a caller, request or model supplies can change the field or the value; the wire field
-// names appear nowhere above the driver layer; and the activation gate still refuses external mode.
+// names appear nowhere above the driver layer; and the reader produces the same validated external configuration, with its format.
 import fs from "node:fs";
 import path from "node:path";
 import { inspect } from "node:util";
@@ -61,8 +61,10 @@ test("synthetic mode is unaffected: MODEL_WIRE_FORMAT is not required, not read 
   assert.equal((readAssistantConfig(withoutFormat) as Record<string, unknown>).env, "synthetic");
 });
 
-test("the activation gate still holds: a complete, valid external environment is refused by readAssistantConfig", () => {
-  assert.throws(() => readAssistantConfig(ENV), (e: unknown) => e instanceof AssistantConfigError && e.code === "real_data_mode_not_permitted");
+test("the activation gate is open through validation only: readAssistantConfig returns exactly the validated external configuration", () => {
+  assert.deepEqual(readAssistantConfig(ENV), validateExternalEnv(ENV));
+  assert.equal((readAssistantConfig(ENV) as { wireFormat?: string }).wireFormat, ENV.MODEL_WIRE_FORMAT);
+  assert.throws(() => readAssistantConfig({ ...ENV, MODEL_WIRE_FORMAT: "" }), (e: unknown) => e instanceof AssistantConfigError && e.code === "missing_configuration" && e.variables.includes("MODEL_WIRE_FORMAT"));
 });
 
 test("each wire format sends the configured cap in exactly one field, chosen by the registry, whatever the caller or request supplies", async () => {
