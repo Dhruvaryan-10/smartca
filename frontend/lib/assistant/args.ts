@@ -12,9 +12,12 @@
 import { parseIsoDate } from "../date-parse";
 
 export class ToolArgumentError extends Error {
-  constructor(message: string) {
+  /** True when a field the tool does not accept was sent (for example a user id): never treated as a harmless slip. */
+  readonly unknownField: boolean;
+  constructor(message: string, unknownField = false) {
     super(message);
     this.name = "ToolArgumentError";
+    this.unknownField = unknownField;
   }
 }
 
@@ -57,7 +60,7 @@ export function shown(name: string): string {
 /** Rejects any field not on the allow-list, naming it (clipped: see `shown`). */
 function onlyFields(record: Record<string, unknown>, allowed: readonly string[], where: string): void {
   for (const key of Object.keys(record)) {
-    if (!allowed.includes(key)) throw new ToolArgumentError(`${where}: the field "${shown(key)}" is not accepted.`);
+    if (!allowed.includes(key)) throw new ToolArgumentError(`${where}: the field "${shown(key)}" is not accepted.`, true);
   }
 }
 
@@ -93,7 +96,8 @@ function carriesPersonalDetail(question: string): boolean {
   return EMAIL_LIKE.test(question) || PAN_SHAPE.test(question) || LONG_NUMBER.test(question) || (question.match(FIGURE)?.length ?? 0) > MAX_QUESTION_FIGURES;
 }
 
-export type SearchTaxLawArgs = { question: string; assessmentYear: string; sectionRef?: string };
+/** assessmentYear null: the tool uses the newest year the engine supports (the corpus year). A question naming another year is still refused by retrieval. */
+export type SearchTaxLawArgs = { question: string; assessmentYear: string | null; sectionRef?: string };
 
 export function readSearchTaxLawArgs(args: unknown): SearchTaxLawArgs {
   const record = objectOf(args, "search_tax_law arguments");
@@ -106,11 +110,11 @@ export function readSearchTaxLawArgs(args: unknown): SearchTaxLawArgs {
     throw new ToolArgumentError("The question looks like it carries personal details (an email address, a PAN-shaped code, a number of 9 or more digits, or many figures). Ask the tax-law question in general terms, and use the other tools for the person's own figures.");
   }
   const assessmentYear = record.assessmentYear;
-  if (typeof assessmentYear !== "string" || !ASSESSMENT_YEAR_SHAPE.test(assessmentYear)) {
-    throw new ToolArgumentError('assessmentYear is required, for example "2026-27".');
+  if (assessmentYear !== undefined && (typeof assessmentYear !== "string" || !ASSESSMENT_YEAR_SHAPE.test(assessmentYear))) {
+    throw new ToolArgumentError('assessmentYear must look like "2026-27".');
   }
   const sectionRef = optionalText(record, "sectionRef", MAX_SECTION_REF_CHARS);
-  return { question, assessmentYear, ...(sectionRef === null ? {} : { sectionRef }) };
+  return { question, assessmentYear: assessmentYear ?? null, ...(sectionRef === null ? {} : { sectionRef }) };
 }
 
 // ---------------------------------------------------------------------

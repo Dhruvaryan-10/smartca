@@ -30,7 +30,8 @@ const calcArgs = { regime: "old", assessmentYear: "2026-27", ageCategory: "below
 const stubs = (results: Partial<Record<ToolName, ToolResult<unknown>>>) => stubTools(results);
 
 test("B4: the composed function returns an Answer and nothing else: no orchestrator result, no raw model text, no tool activity", async () => {
-  const { tools } = stubs({ calculate_tax: envelope(calcRecord("old")) });
+  // The question names 80C, so official evidence is fetched before the model answers: the stub serves a real-shaped search result.
+  const { tools } = stubs({ calculate_tax: envelope(calcRecord("old")), search_tax_law: envelope(searchRecord([evidence(1)])) });
   const honest = `Under the old regime your tax is ${inr(OLD.totalTaxPaise)}.`;
   const result = await askAssistant(
     { userId: USER, userMessages: ["What is my tax on 15 lakh with 80C?"] },
@@ -192,4 +193,34 @@ test("when the earlier context would make the turn too long, the oldest earlier 
   const turn = model.requests[0].messages[1].content;
   assert.ok(turn.length <= MAX_MESSAGE_CHARS);
   assert.ok(!turn.includes("OLDEST") && turn.includes("MIDDLE") && turn.endsWith("LAST question?"));
+});
+
+// --- the tax-law evidence prefetch, end to end through the answer layer -----------------------------------------------------
+
+test("a tax-law question is answered from evidence fetched before the model: the answer layer accepts it, and the record is round 1", async () => {
+  // The prefetch was once recorded as round 0, which the answer layer refuses: every prefetched answer was withheld.
+  const { tools, calls } = stubs({ search_tax_law: envelope(searchRecord([evidence(1)])) });
+  const activity: Array<{ round: number; callId: string; tool: string }> = [];
+  const model = scriptedModel(text(`According to the cited Income Tax Department guidance, the rebate applies [${evidenceId(1)}].`));
+  const result = await askAssistant(
+    { userId: USER, userMessages: ["What is the 87A rebate?"] },
+    { model, tools, onToolActivity: (a) => activity.push({ round: a.round, callId: a.callId, tool: a.tool }) },
+  );
+  assert.equal(result.state, "answered", JSON.stringify(result.violations));
+  assert.deepEqual(result.citations.map((c) => c.evidenceId), [evidenceId(1)]);
+  assert.deepEqual(calls.map((c) => [c.tool, c.args]), [["search_tax_law", { question: "What is the 87A rebate?" }]], "searched once, with the person's question");
+  assert.deepEqual(activity, [{ round: 1, callId: "evidence_prefetch", tool: "search_tax_law" }]);
+  assert.ok(model.requests[0].messages.some((m) => m.role === "tool"), "the model's first call already has the evidence");
+});
+
+test("the prefetch never searches a question carrying personal details, a question that is not about tax law, or when search_tax_law is not allowed", async () => {
+  for (const [label, question, allowedTools] of [
+    ["a PAN-shaped code", "Is ABCDE1234F eligible for 80C?", undefined],
+    ["not tax law", "How much did I spend on food?", undefined],
+    ["search not allowed", "What is Section 80D?", ["query_transactions"] as ToolName[]],
+  ] as const) {
+    const { tools, calls } = stubs({});
+    await askAssistant({ userId: USER, userMessages: [question] }, { model: scriptedModel(text("SmartCA does not have that information.")), tools, ...(allowedTools === undefined ? {} : { allowedTools }) });
+    assert.deepEqual(calls, [], label);
+  }
 });

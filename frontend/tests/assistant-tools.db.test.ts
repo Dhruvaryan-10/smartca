@@ -151,11 +151,11 @@ test("userId is never an argument: it, and any executor or other unknown field, 
   }
 });
 
-test("search_tax_law arguments: a question of 1 to 300 characters, an assessment year, and an optional section only", async () => {
+test("search_tax_law arguments: a question of 1 to 300 characters, an optional well-formed assessment year, and an optional section only", async () => {
   const bad: unknown[] = [
     { assessmentYear: "2026-27" }, { question: "", assessmentYear: "2026-27" }, { question: "   ", assessmentYear: "2026-27" },
     { question: "x".repeat(301), assessmentYear: "2026-27" }, { question: "x".repeat(501), assessmentYear: "2026-27" }, { question: 5, assessmentYear: "2026-27" },
-    { question: "q", assessmentYear: "2026" }, { question: "q", assessmentYear: "26-27" }, { question: "q" }, { question: "q", assessmentYear: 2026 },
+    { question: "q", assessmentYear: "2026" }, { question: "q", assessmentYear: "26-27" }, { question: "q", assessmentYear: 2026 },
     { question: "q", assessmentYear: "2026-27", sectionRef: 87 }, { question: "q", assessmentYear: "2026-27", sectionRef: "x".repeat(21) },
   ];
   for (const args of bad) assert.equal(refused(await assistantTools.search_tax_law(NOT_A_USER, args)).reason, "invalid_arguments", JSON.stringify(args).slice(0, 80));
@@ -650,4 +650,11 @@ test("query_transactions sort: \"amount\" lists the largest first and says so; t
     const refused = await assistantTools.query_transactions(a, { sort: "random" });
     assert.equal(refused.status === "refused" && refused.reason, "invalid_arguments");
   });
+});
+
+test("search_tax_law without an assessment year searches the newest year the engine supports (the corpus year)", async () => {
+  const asked: string[] = [];
+  const tools = createAssistantTools({ retrieve: async (input) => { asked.push(input.assessmentYear); return { status: "insufficient_evidence", reason: "no_matching_passages", assessmentYear: input.assessmentYear, corpusVersion: "v", sectionRefs: [] }; } });
+  await tools.search_tax_law("00000000-0000-4000-8000-0000000000aa", { question: "What is Form 16?" });
+  assert.deepEqual(asked, ["2026-27"]);
 });

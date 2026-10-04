@@ -27,6 +27,7 @@ import { NotAuthenticatedError } from "../services/errors";
 import { USER, ask, call, errorCode, insistentModel, rejectsWith, scriptedModel, stubTools, taxBody, text, toolCalls } from "./helpers-orchestrator";
 import type { AssistantTools } from "./helpers-orchestrator";
 import { presentForModel } from "../lib/assistant/model-view";
+import { isTaxLawQuestion } from "../lib/assistant/law-question";
 
 const FRONTEND = path.resolve(__dirname, "..");
 
@@ -120,7 +121,7 @@ test("the model cannot select an arbitrary function: a name is looked up in the 
 test("no write tool is reachable: the orchestrator imports no write path, database client or raw service", () => {
   const source = code("services/assistant/orchestrator.ts");
   const specifiers = [...new Set([...source.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]))].sort();
-  assert.deepEqual(specifiers, ["./model", "./tools", "../errors", "@/lib/assistant/args", "@/lib/assistant/egress-filter", "@/lib/assistant/model-view", "@/lib/assistant/tool-contract", "@/lib/money-input"].sort(), "an import here is a decision");
+  assert.deepEqual(specifiers, ["./model", "./tools", "../errors", "@/lib/assistant/args", "@/lib/assistant/egress-filter", "@/lib/assistant/law-question", "@/lib/assistant/model-view", "@/lib/assistant/tool-contract", "@/lib/money-input"].sort(), "an import here is a decision");
   // "./tools" is a TYPE import only; the real tool set is loaded by the one dynamic import, and only when the caller gave no tools.
   assert.match(source, /import type \{[^}]*\} from "\.\/tools"/, "the static import of ./tools is type-only");
   assert.doesNotMatch(source, /^import\s+\{[^}]*\}\s+from\s+"\.\/tools"/m, "no runtime import of ./tools at load time");
@@ -245,16 +246,18 @@ test("the tool schemas are strict, and match what the argument validators accept
 test("the loop is bounded to four model rounds: a model that never stops is refused, and never called a fifth time", async () => {
   assert.equal(MAX_ROUNDS, 4);
   const { tools, calls } = stubTools();
-  const model = insistentModel((round) => [call(`c${round}`, "query_transactions", {})]);
+  // Distinct arguments each round: a repeated call is never run again.
+  const model = insistentModel((round) => [call(`c${round}`, "query_transactions", { limit: round })]);
   const error = await rejectsWith("round_limit_exceeded", () => runAssistant({ userId: USER, messages: ask() }, { model, tools }));
   assert.equal(model.requests.length, MAX_ROUNDS);
+  assert.deepEqual(model.requests[MAX_ROUNDS - 1].tools, [], "the last round offers no tools once a tool has run: it can only answer");
   assert.equal(calls.length, MAX_ROUNDS - 1, "the last round's calls are not run: their results could not be sent back");
   assert.equal(error.toolActivity.length, MAX_ROUNDS - 1);
 });
 
 test("at most eight tool calls in total: the ninth is refused before it runs, and eight exactly is fine", async () => {
   assert.equal(MAX_TOOL_CALLS, 8);
-  const batch = (n: number, round: number) => toolCalls(...Array.from({ length: n }, (_, i) => call(`r${round}c${i}`, "query_transactions", {})));
+  const batch = (n: number, round: number) => toolCalls(...Array.from({ length: n }, (_, i) => call(`r${round}c${i}`, "query_transactions", { limit: round * 10 + i })));
 
   const over = stubTools();
   const error = await rejectsWith("tool_call_limit_exceeded", () => runAssistant({ userId: USER, messages: ask() }, { model: scriptedModel(batch(3, 1), batch(3, 2), batch(3, 3), text("x")), tools: over.tools }));
@@ -411,4 +414,75 @@ test("the system prompt asks for source-aware answers, evidence-named investment
   ]) {
     assert.match(ORCHESTRATOR_SYSTEM_PROMPT, rule);
   }
+});
+
+test("the system prompt says which tool comes first, that tax law always needs search_tax_law, and never to repeat a call (found with a real local model)", () => {
+  // Asked "What is Section 80D?", a real 7B model answered "According to the cited Income Tax Department guidance (evidenceId:
+  // tax_law_80D)" without calling any tool; asked to explain the saved calculation, it called get_saved_tax_computation three times.
+  for (const rule of [/First call the one tool the question needs/, /search_tax_law for any Indian tax-law question/, /Never call the same tool twice with the same arguments/, /only after search_tax_law returned evidence/, /never invent one/, /get_saved_tax_computation once/]) {
+    assert.match(ORCHESTRATOR_SYSTEM_PROMPT, rule);
+  }
+});
+
+// --- repeated and unusable calls once results are in hand (Phase 15B, found with a real local model) -----------------------
+
+test("a repeated call is not run again: with results in hand the model is asked to answer, with no tools offered", async () => {
+  const { tools, calls } = stubTools();
+  const model = scriptedModel(toolCalls(call("a", "query_transactions", { type: "expense" })), toolCalls(call("b", "query_transactions", { type: "expense" })), text("You spent ₹0."));
+  const result = await runAssistant({ userId: USER, messages: ask() }, { model, tools });
+  assert.equal(calls.length, 1, "the repeat never ran");
+  assert.equal(result.text, "You spent ₹0.");
+  assert.equal(result.rounds, 3);
+  assert.ok((model.requests[0].tools ?? []).length > 0, "tools were offered at first");
+  assert.deepEqual(model.requests[2].tools, [], "the answer round offers none");
+  assert.equal(model.requests[2].messages.filter((m) => m.role === "tool").length, 1, "the model answers from the one result it has");
+});
+
+test("arguments in a different key order are the same call", async () => {
+  const { tools, calls } = stubTools();
+  const model = scriptedModel(toolCalls(call("a", "query_transactions", { type: "expense", limit: 5 })), toolCalls(call("b", "query_transactions", { limit: 5, type: "expense" })), text("Done."));
+  await runAssistant({ userId: USER, messages: ask() }, { model, tools });
+  assert.equal(calls.length, 1);
+});
+
+test("an unusable call after a result asks for an answer; an unusable FIRST call still refuses the run", async () => {
+  const after = stubTools();
+  const answered = await runAssistant({ userId: USER, messages: ask() }, {
+    model: scriptedModel(toolCalls(call("a", "search_tax_law", { question: "What is 80D?", assessmentYear: "2026-27" })), toolCalls(call("b", "search_tax_law", { assessmentYear: "2026-27" })), text("Answered.")),
+    tools: after.tools,
+  });
+  assert.equal(answered.text, "Answered.");
+  assert.equal(after.calls.length, 1, "the unusable call never ran");
+
+  const first = stubTools();
+  await rejectsWith("invalid_tool_arguments", () => runAssistant({ userId: USER, messages: ask() }, { model: scriptedModel(toolCalls(call("a", "search_tax_law", { assessmentYear: "2026-27" })), text("x")), tools: first.tools }));
+  assert.equal(first.calls.length, 0);
+});
+
+test("a model that still asks for tools when none are offered ends the run as before, having run nothing more", async () => {
+  const { tools, calls } = stubTools();
+  const model = scriptedModel(toolCalls(call("a", "query_transactions", {})), toolCalls(call("b", "query_transactions", {})), toolCalls(call("c", "query_transactions", {})));
+  await rejectsWith("round_limit_exceeded", () => runAssistant({ userId: USER, messages: ask() }, { model, tools }));
+  assert.equal(calls.length, 1);
+  assert.equal(model.requests.length, 3);
+});
+
+test("after a result, a call carrying a field the tool does not accept (a user id) still refuses the run: never a 'slip'", async () => {
+  const { tools, calls } = stubTools();
+  const model = scriptedModel(toolCalls(call("a", "query_transactions", {})), toolCalls(call("b", "query_transactions", { userId: "someone-else" })), text("x"));
+  const error = await rejectsWith("invalid_tool_arguments", () => runAssistant({ userId: USER, messages: ask() }, { model, tools }));
+  assert.equal(calls.length, 1, "the injected call never ran");
+  assert.equal(error.toolActivity.length, 1);
+});
+
+test("the system prompt shows the exact citation form and asks for plain text (found with a real local model)", () => {
+  // A real 7B model cited real ids as "(evidenceId: ev_..., ev_...)" and wrote markdown links; the answer layer withheld it.
+  // The form is DESCRIBED, never shown with a real-looking id: a model copied the example id "[ev_00df9c8a5bd33800]" as a citation.
+  for (const rule of [/in square brackets, in the form \[ev_ followed by its 16 letters and digits\]/, /Never make up an id/, /no markdown links, headings, tables or bold/i]) assert.match(ORCHESTRATOR_SYSTEM_PROMPT, rule);
+  assert.doesNotMatch(ORCHESTRATOR_SYSTEM_PROMPT, /ev_[0-9a-f]{16}/, "no copyable id in the prompt");
+});
+
+test("which questions count as tax law, so official evidence is fetched first", () => {
+  for (const q of ["What is Section 80D?", "what is tds", "Is HRA exempt?", "Explain 87A", "How do I file ITR-2?", "What is Form 26AS?", "old vs new regime slabs"]) assert.equal(isTaxLawQuestion(q), true, q);
+  for (const q of ["How much did I spend on food?", "What is my total income?", "Show my largest expenses", "", "   "]) assert.equal(isTaxLawQuestion(q), false, q);
 });

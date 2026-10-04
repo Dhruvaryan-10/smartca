@@ -51,6 +51,7 @@ import {
   calculateTax,
   scenarioDelta,
 } from "@/tax-engine";
+import { getSupportedAssessmentYearLabels } from "@/tax-engine";
 import type { ComparisonInput, RegimeComparison, ScenarioDelta, TaxRegime, TaxResult } from "@/tax-engine";
 
 // ---------------------------------------------------------------------
@@ -249,7 +250,10 @@ export function createAssistantTools(deps: AssistantToolDeps = {}) {
     search_tax_law: async (userId: string, args: unknown): Promise<ToolResult<SearchTaxLawResult>> => {
       requireUser(userId);
       return guarded("search_tax_law", async () => {
-        const { question, assessmentYear, sectionRef } = readSearchTaxLawArgs(args);
+        const read = readSearchTaxLawArgs(args);
+        // No year given: the newest year the engine supports, which is the corpus year. Never a clock.
+        const assessmentYear = read.assessmentYear ?? [...getSupportedAssessmentYearLabels()].sort().at(-1) ?? "";
+        const { question, sectionRef } = read;
         const found = await retrieve({ question, assessmentYear, ...(sectionRef === undefined ? {} : { sectionRef }) });
         if (found.status === "insufficient_evidence") {
           return refusal("search_tax_law", found.reason, `No usable evidence: ${found.reason}.`, {

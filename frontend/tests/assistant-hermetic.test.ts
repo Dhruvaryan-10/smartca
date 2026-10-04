@@ -22,6 +22,7 @@ const PURE_SOURCE = [
   "lib/assistant/profiles.ts",
   "lib/assistant/authorization.ts",
   "lib/assistant/egress-filter.ts",
+  "lib/assistant/law-question.ts",
   "lib/assistant/access-plan.ts",
   "lib/assistant/egress-disclosure.ts",
   "lib/assistant/run-limits.ts",

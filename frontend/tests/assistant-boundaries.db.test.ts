@@ -262,10 +262,11 @@ test("what the caller gets back is metadata only: tool, call id, round, outcome,
 });
 
 test("every orchestrator error carries the same metadata-only activity, and no ledger row, in its message, fields or printout", async () => {
-  const rounds = (n: number) => Array.from({ length: n }, (_, i) => toolCalls(call(`r${i}`, "query_transactions", {})));
+  // Distinct arguments per call: a repeated call is never run again (the orchestrator asks for an answer instead).
+  const rounds = (n: number) => Array.from({ length: n }, (_, i) => toolCalls(call(`r${i}`, "query_transactions", { limit: i + 1 })));
   const scenarios: Array<[OrchestratorErrorCode, () => { model: ModelAdapter; tools: AssistantTools }]> = [
     ["round_limit_exceeded", () => ({ model: scriptedModel(...rounds(4)), tools: stubTools({ query_transactions: LEDGER }).tools })],
-    ["tool_call_limit_exceeded", () => ({ model: scriptedModel(toolCalls(...[1, 2, 3].map((i) => call(`a${i}`, "query_transactions", {}))), toolCalls(...[1, 2, 3].map((i) => call(`b${i}`, "query_transactions", {}))), toolCalls(...[1, 2, 3].map((i) => call(`c${i}`, "query_transactions", {})))), tools: stubTools({ query_transactions: LEDGER }).tools })],
+    ["tool_call_limit_exceeded", () => ({ model: scriptedModel(toolCalls(...[1, 2, 3].map((i) => call(`a${i}`, "query_transactions", { limit: i }))), toolCalls(...[1, 2, 3].map((i) => call(`b${i}`, "query_transactions", { limit: 10 + i }))), toolCalls(...[1, 2, 3].map((i) => call(`c${i}`, "query_transactions", { limit: 20 + i })))), tools: stubTools({ query_transactions: LEDGER }).tools })],
     ["unknown_tool", () => ({ model: scriptedModel(rounds(1)[0], toolCalls(call("x", "run_sql", {}))), tools: stubTools({ query_transactions: LEDGER }).tools })],
     ["invalid_tool_arguments", () => ({ model: scriptedModel(rounds(1)[0], toolCalls(call("x", "query_transactions", { userId: "victim" }))), tools: stubTools({ query_transactions: LEDGER }).tools })],
     ["tool_result_too_large", () => ({ model: scriptedModel(rounds(1)[0]), tools: stubTools({ query_transactions: { status: "ok", tool: "query_transactions", result: { blob: `LEDGER-MARKER-${"x".repeat(60_000)}` } } }).tools })],

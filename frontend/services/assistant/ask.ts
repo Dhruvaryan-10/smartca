@@ -108,6 +108,8 @@ export async function askAssistant(input: AskInput, deps: AskDeps): Promise<Answ
         ...(deps.visibleClasses === undefined ? {} : { visibleClasses: deps.visibleClasses }),
         ...(deps.onToolActivity === undefined ? {} : { onToolActivity: deps.onToolActivity }),
         ...(deps.modelPolicy === undefined ? {} : { modelPolicy: deps.modelPolicy }),
+        // The person's last message: when it is a tax-law question, official evidence is fetched before the model answers.
+        evidenceFor: userMessages[userMessages.length - 1],
         // A deep copy of each full result, for buildAnswer alone: it is never logged, returned or put in an error.
         onToolResult: (record) => {
           records.push({ round: record.round, callId: record.callId, tool: record.tool, result: record.result });
